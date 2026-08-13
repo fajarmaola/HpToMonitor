@@ -1,0 +1,69 @@
+name: Windows
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-app:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build native DLL (DXGI capture + Media Foundation H.264)
+        run: |
+          cmake -S windows/SecondScreen.Native -B windows/SecondScreen.Native/build -A x64
+          cmake --build windows/SecondScreen.Native/build --config Release
+
+      - name: Run crypto/protocol unit tests (same vectors as Android)
+        run: dotnet test windows/SecondScreen.Tests/SecondScreen.Tests.csproj -c Release --logger "trx;LogFileName=results.trx"
+
+      - name: Build Core + Desktop (WPF)
+        env:
+          SSL_NATIVE_DLL: ${{ github.workspace }}\windows\SecondScreen.Native\build\Release\SecondScreen.Native.dll
+        run: dotnet build windows/SecondScreenLocal.sln -c Release
+
+      - name: Publish self-contained Desktop .exe
+        env:
+          SSL_NATIVE_DLL: ${{ github.workspace }}\windows\SecondScreen.Native\build\Release\SecondScreen.Native.dll
+        run: dotnet publish windows/SecondScreen.Desktop/SecondScreen.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
+
+      - name: Copy native DLL next to the exe
+        run: copy windows\SecondScreen.Native\build\Release\SecondScreen.Native.dll publish\
+
+      - name: Upload Windows app
+        uses: actions/upload-artifact@v4
+        with:
+          name: SecondScreenLocal-windows
+          path: publish/
+
+  build-driver:
+    runs-on: windows-latest
+    continue-on-error: true   # WDK availability on hosted runners varies; surface errors, don't block
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Windows Driver Kit (best effort)
+        continue-on-error: true
+        run: choco install windowsdriverkit11 -y --no-progress
+
+      - name: Build IddCx virtual display driver
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VSPATH=%%i
+          call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat"
+          msbuild windows\SecondScreen.DisplayDriver\SecondScreen.DisplayDriver.vcxproj /p:Configuration=Release /p:Platform=x64
+
+      - name: Upload driver package (if built)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SecondScreenLocal-driver
+          path: windows/SecondScreen.DisplayDriver/x64/Release/
+          if-no-files-found: warn

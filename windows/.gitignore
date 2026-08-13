@@ -1,0 +1,9 @@
+# .NET / C++ build outputs
+bin/
+obj/
+build/
+publish/
+x64/
+*.user
+# Native
+SecondScreen.Native/build/

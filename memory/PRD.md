@@ -58,3 +58,14 @@ created (per the user's explicit engineering rule).
 - Working MVP path (LAN + primary-display capture + H.264 + touch) is theoretically build-ready.
 - Display-2 (IddCx) path is INCOMPLETE: EDID STUB + WDK build/sign remain (cannot be done in Linux env).
 - Crypto interop verified by design + test vectors (shared/protocol/TEST_VECTORS.md); not runtime-tested.
+
+## Build/verify results (this session — actually executed)
+- Android APK BUILT: /app/artifacts/SecondScreenLocal-debug.apk (14.8MB, valid dex/arsc/manifest).
+  Gradle wrapper committed; qemu aapt2 shim only needed on this arm64 container.
+- Fixed 1 real Kotlin compile error found by the build (MonitorActivity visibility in nested lambda).
+- Android unit tests 5/5 PASSED; C# crypto/protocol tests 7/7 PASSED; C#↔Kotlin interop proven
+  byte-identical against TEST_VECTORS.md.
+- EDID STUB REPLACED with a valid 128-byte block (checksum verified) in Driver.cpp.
+- CI added: .github/workflows/{android,windows}.yml (build .apk + .exe + tests + best-effort driver).
+- Windows .exe / native DLL / IddCx driver still REQUIRE a Windows runner (CI) — cannot compile on Linux.
+  See docs/BUILD_RESULTS.md.

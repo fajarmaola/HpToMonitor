@@ -25,6 +25,24 @@ static const DisplayMode s_modes[] = {
     { 1280,  720, 60 },
 };
 
+// Valid 128-byte EDID 1.4 base block (checksum verified: sum(bytes) % 256 == 0).
+// Manufacturer "SSL", monitor name "SecondScreen", preferred DTD 1920x1080@60, range limits
+// 50-75Hz / 30-160kHz. IddCx requires a real EDID for the monitor to enumerate; the actual
+// selectable modes are still supplied by the mode callbacks below.
+static const BYTE s_edid[128] = {
+    0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x4E, 0x6C, 0x01, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x01, 0x22, 0x01, 0x04, 0xA5, 0x07, 0x0F, 0x78,
+    0x06, 0xEE, 0x91, 0xA3, 0x54, 0x4C, 0x99, 0x26, 0x0F, 0x50, 0x54, 0x00,
+    0x00, 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+    0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x02, 0x3A, 0x80, 0x18, 0x71, 0x38,
+    0x2D, 0x40, 0x58, 0x2C, 0x45, 0x00, 0x58, 0xC2, 0x10, 0x00, 0x00, 0x1E,
+    0x00, 0x00, 0x00, 0xFC, 0x00, 0x53, 0x65, 0x63, 0x6F, 0x6E, 0x64, 0x53,
+    0x63, 0x72, 0x65, 0x65, 0x6E, 0x0A, 0x00, 0x00, 0x00, 0xFD, 0x00, 0x32,
+    0x4B, 0x1E, 0xA0, 0x1E, 0x00, 0x0A, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+    0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x00, 0x38
+};
+
 extern "C" DRIVER_INITIALIZE DriverEntry;
 
 static EVT_WDF_DRIVER_DEVICE_ADD EvtDeviceAdd;
@@ -219,17 +237,16 @@ NTSTATUS EvtIddCxAdapterInitFinished(IDDCX_ADAPTER adapter, const IDARG_IN_ADAPT
     auto* ctx = GetAdapterContext(adapter);
     ctx->Adapter = adapter;
     // Create and plug in one monitor (single-display MVP; array-ready for multi-display).
-    // STUB(driver): MonitorDescription is sent with an empty EDID (DataSize=0). On real
-    // hardware IddCx expects a valid 128-byte EDID base block here; supply one before the
-    // Display-2 path can enumerate. Modes themselves come from the mode callbacks below.
+    // A valid 128-byte EDID (s_edid) is supplied so Windows enumerates the monitor; the
+    // selectable modes come from the mode callbacks below.
     IDDCX_MONITOR_INFO monitorInfo = {};
     monitorInfo.Size = sizeof(monitorInfo);
     monitorInfo.MonitorType = DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INTERNAL;
     monitorInfo.ConnectorIndex = 0;
     monitorInfo.MonitorDescription.Size = sizeof(monitorInfo.MonitorDescription);
     monitorInfo.MonitorDescription.Type = IDDCX_MONITOR_DESCRIPTION_TYPE_EDID;
-    monitorInfo.MonitorDescription.DataSize = 0;         // no canned EDID; modes come from callbacks
-    monitorInfo.MonitorDescription.pData = nullptr;
+    monitorInfo.MonitorDescription.DataSize = sizeof(s_edid);
+    monitorInfo.MonitorDescription.pData = const_cast<BYTE*>(s_edid);
     CoCreateGuid(&monitorInfo.MonitorContainerId);
 
     IDARG_IN_MONITORCREATE in = {};

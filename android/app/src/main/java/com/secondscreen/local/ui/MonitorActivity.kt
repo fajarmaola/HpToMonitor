@@ -59,10 +59,7 @@ class MonitorActivity : ComponentActivity() {
         val toggle = Button(this).apply {
             text = "Stats"
             alpha = 0.4f
-            setOnClickListener {
-                overlayVisible = !overlayVisible
-                overlay.visibility = if (overlayVisible) View.VISIBLE else View.GONE
-            }
+            setOnClickListener { toggleOverlay() }
         }
         root.addView(toggle, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
@@ -96,6 +93,11 @@ class MonitorActivity : ComponentActivity() {
         super.onResume()
         monitorMode.enter()
         monitorMode.tryStartLockTask()
+    }
+
+    private fun toggleOverlay() {
+        overlayVisible = !overlayVisible
+        overlay.visibility = if (overlayVisible) View.VISIBLE else View.GONE
     }
 
     private fun observeState(connection: com.secondscreen.local.net.ConnectionManager) {

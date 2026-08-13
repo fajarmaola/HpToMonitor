@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Cross-platform net8.0 (NOT -windows) so the pure crypto/protocol logic can be unit-tested
+       on any OS / CI without the Windows-only Core project. It compiles the same source files. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Same source of truth as the Windows build. -->
+    <Compile Include="..\..\shared\protocol\csharp\Protocol.cs" Link="Protocol.cs" />
+    <Compile Include="..\SecondScreen.Core\Crypto\CryptoUtil.cs" Link="CryptoUtil.cs" />
+    <Compile Include="..\SecondScreen.Core\Video\VideoPacketizer.cs" Link="VideoPacketizer.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.10.0" />
+    <PackageReference Include="xunit" Version="2.9.0" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+</Project>
