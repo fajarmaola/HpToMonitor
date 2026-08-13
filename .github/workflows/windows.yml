@@ -70,7 +70,10 @@ jobs:
         run: |
           for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VSPATH=%%i
           call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat"
-          msbuild windows\SecondScreen.DisplayDriver\SecondScreen.DisplayDriver.vcxproj /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off
+          rem vcvars sets WindowsSDKVersion (with trailing backslash) to the installed SDK; use it
+          set "SDKVER=%WindowsSDKVersion:\=%"
+          echo Using Windows SDK version: %SDKVER%
+          msbuild windows\SecondScreen.DisplayDriver\SecondScreen.DisplayDriver.vcxproj /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off /p:WindowsTargetPlatformVersion=%SDKVER%
           if not exist "windows\SecondScreen.DisplayDriver\x64\Release\SecondScreenDisplay\SecondScreenDisplay.dll" if not exist "windows\SecondScreen.DisplayDriver\x64\Release\SecondScreenDisplay.dll" (echo DRIVER_COMPILE_FAILED & exit /b 1)
           echo DRIVER_COMPILE_SUCCESS
 
