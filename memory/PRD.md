@@ -69,3 +69,15 @@ created (per the user's explicit engineering rule).
 - CI added: .github/workflows/{android,windows}.yml (build .apk + .exe + tests + best-effort driver).
 - Windows .exe / native DLL / IddCx driver still REQUIRE a Windows runner (CI) — cannot compile on Linux.
   See docs/BUILD_RESULTS.md.
+
+## Update (Jun 2026) — WDK driver now builds in CI via NuGet
+- ROOT CAUSE of the CI `wudfwdm.h not found`: GitHub `windows-latest` has VS + SDK but NO WDK,
+  and the old choco `windowsdriverkit11` + VSIX step never populated the WDK include paths.
+- FIX: switched the IddCx driver to the modern **WDK NuGet** delivery (Microsoft.Windows.WDK.x64
+  + SDK.CPP, v10.0.28000.2526), mirroring microsoft/Windows-driver-samples.
+  New files: windows/SecondScreen.DisplayDriver/{packages.config, Directory.Build.props};
+  vcxproj restructured to the official IddSampleDriver layout (IndirectDisplayDriver + IDDCX 1.4,
+  DriverTargetPlatform=Universal), removed the manual include-path hack.
+- CI (.github/workflows/windows.yml `windows-driver` job): now does `nuget restore` then msbuild,
+  no choco/VSIX, no hardcoded WindowsTargetPlatformVersion.
+- STATUS: pushed for CI verification (cannot compile Windows drivers in the Linux container).

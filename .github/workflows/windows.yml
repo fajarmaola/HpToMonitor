@@ -51,33 +51,29 @@ jobs:
           if-no-files-found: error
 
   windows-driver:
-    name: IddCx driver compile (WDK)
+    name: IddCx driver compile (WDK NuGet)
     runs-on: windows-latest
     # NOT continue-on-error: a genuine compile failure makes THIS job red so it is visible.
     # Core artifacts are unaffected (separate job). Signing/runtime are handled separately below.
+    # The WDK is delivered via NuGet (Microsoft.Windows.WDK.x64), so no WDK/VSIX install is
+    # needed — this is the modern, supported way to build drivers on hosted runners.
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Windows Driver Kit (WDK)
+      - name: Set up NuGet
+        uses: NuGet/setup-nuget@v2
+
+      - name: Restore WDK NuGet packages (provides wudfwdm.h, wdf.h, iddcx.h + UMDF toolset)
         shell: pwsh
-        run: |
-          # WDK content + matching SDK components for the UMDF/IddCx toolset.
-          choco install windowsdriverkit11 -y --no-progress
-          # Integrate the WDK into the installed Visual Studio (provides wudfwdm.h + UMDF toolset).
-          $vsix = Get-ChildItem "C:\Program Files*\Windows Kits\10\Vsix" -Recurse -Filter "WDK.vsix" -ErrorAction SilentlyContinue | Select-Object -First 1
-          $installer = Get-ChildItem "C:\Program Files*\Microsoft Visual Studio\*\*\Common7\IDE\VSIXInstaller.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($vsix -and $installer) { & $installer.FullName /quiet /admin $vsix.FullName; echo "WDK VSIX installed" } else { echo "WDK VSIX not found (WDK content likely absent on this runner)" }
-          echo "WDK install step completed"
+        working-directory: windows/SecondScreen.DisplayDriver
+        run: nuget restore packages.config -PackagesDirectory packages
 
       - name: DRIVER_COMPILE - build IddCx driver (x64/Release), no signing
         shell: cmd
         run: |
           for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VSPATH=%%i
           call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat"
-          rem vcvars sets WindowsSDKVersion (with trailing backslash) to the installed SDK; use it
-          set "SDKVER=%WindowsSDKVersion:\=%"
-          echo Using Windows SDK version: %SDKVER%
-          msbuild windows\SecondScreen.DisplayDriver\SecondScreen.DisplayDriver.vcxproj /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off /p:WindowsTargetPlatformVersion=%SDKVER%
+          msbuild windows\SecondScreen.DisplayDriver\SecondScreen.DisplayDriver.vcxproj /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off
           if not exist "windows\SecondScreen.DisplayDriver\x64\Release\SecondScreenDisplay\SecondScreenDisplay.dll" if not exist "windows\SecondScreen.DisplayDriver\x64\Release\SecondScreenDisplay.dll" (echo DRIVER_COMPILE_FAILED & exit /b 1)
           echo DRIVER_COMPILE_SUCCESS
 

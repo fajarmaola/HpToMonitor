@@ -6,18 +6,31 @@
 *Extend these displays*, so real apps (Chrome, YouTube, VS Code, Explorer, media players)
 can be moved onto the Android screen.
 
-> This driver **cannot be built or tested in the authoring Linux container.** It requires the
-> Windows Driver Kit and a Windows test machine. The source is complete and structured per
-> Microsoft's IddCx sample; follow the steps below on Windows.
+> This driver cannot be built inside the authoring Linux container, but it **now builds in CI**
+> (GitHub `windows-latest`) because the WDK is pulled from NuGet — see the `windows-driver`
+> job. To *sign, install and run* it you still need a Windows test machine (steps below).
 
 ## Prerequisites
-- Visual Studio 2022 + **Desktop C++** workload.
-- **Windows Driver Kit (WDK)** for your SDK version + the WDK VS extension.
+- Visual Studio 2022/2026 + **Desktop C++** workload.
+- The **WDK is delivered via NuGet** (`packages.config` in the driver folder) — no separate
+  WDK/VSIX install is required. This is why CI (GitHub-hosted `windows-latest`) can compile it.
 - Test machine (or VM) where you can enable test signing.
+
+## 0. Restore the WDK NuGet packages (once)
+The driver headers (`wudfwdm.h`, `wdf.h`, `iddcx.h`) and the UMDF toolset come from NuGet:
+```
+cd windows\SecondScreen.DisplayDriver
+nuget restore packages.config -PackagesDirectory packages
+```
+`Directory.Build.props` (same folder) imports the restored WDK/SDK props automatically.
 
 ## 1. Build
 Open `windows/SecondScreen.DisplayDriver/SecondScreen.DisplayDriver.vcxproj` in VS (it is
-included in `SecondScreenLocal.sln` but not built by `dotnet`). Build **x64 / Release**.
+NOT part of `SecondScreenLocal.sln`, so `dotnet` never touches it). Build **x64 / Release**.
+Or from a Developer Command Prompt:
+```
+msbuild windows\SecondScreen.DisplayDriver\SecondScreen.DisplayDriver.vcxproj /p:Configuration=Release /p:Platform=x64
+```
 Output: a driver package folder containing:
 - `SecondScreenDisplay.dll`
 - `SecondScreenDisplay.inf`
