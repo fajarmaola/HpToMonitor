@@ -61,8 +61,12 @@ jobs:
       - name: Install Windows Driver Kit (WDK)
         shell: pwsh
         run: |
-          # Adds the WDK + matching SDK VS build components to the existing VS 2022 install.
+          # WDK content + matching SDK components for the UMDF/IddCx toolset.
           choco install windowsdriverkit11 -y --no-progress
+          # Integrate the WDK into the installed Visual Studio (provides wudfwdm.h + UMDF toolset).
+          $vsix = Get-ChildItem "C:\Program Files*\Windows Kits\10\Vsix" -Recurse -Filter "WDK.vsix" -ErrorAction SilentlyContinue | Select-Object -First 1
+          $installer = Get-ChildItem "C:\Program Files*\Microsoft Visual Studio\*\*\Common7\IDE\VSIXInstaller.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($vsix -and $installer) { & $installer.FullName /quiet /admin $vsix.FullName; echo "WDK VSIX installed" } else { echo "WDK VSIX not found (WDK content likely absent on this runner)" }
           echo "WDK install step completed"
 
       - name: DRIVER_COMPILE - build IddCx driver (x64/Release), no signing
