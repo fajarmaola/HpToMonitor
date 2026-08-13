@@ -1,6 +1,10 @@
 // SecondScreen Local — Wire Protocol v1 (C# mirror)
 // Canonical spec: /shared/protocol/PROTOCOL.md. Keep the three language mirrors in sync.
-namespace SecondScreen.Shared
+// NOTE: namespace is SecondScreen.Core (not .Shared) so the C# Core project — which has
+// ImplicitUsings and file-scoped `namespace SecondScreen.Core` everywhere — resolves these
+// symbols without an extra using. The Desktop project's `using SecondScreen.Core;` also covers
+// QualityMode/SessionState.
+namespace SecondScreen.Core
 {
     public static class Protocol
     {

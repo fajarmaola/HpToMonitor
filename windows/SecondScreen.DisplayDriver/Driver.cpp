@@ -184,16 +184,44 @@ NTSTATUS EvtDeviceAdd(WDFDRIVER, PWDFDEVICE_INIT pDeviceInit) {
 
 NTSTATUS EvtDeviceD0Entry(WDFDEVICE device, WDF_POWER_DEVICE_STATE) {
     auto* ctx = GetAdapterContext(device);
-    // Adapter is created in AdapterInitFinished; nothing extra needed here for the MVP.
-    UNREFERENCED_PARAMETER(ctx);
-    return STATUS_SUCCESS;
+    if (ctx->Adapter != nullptr) return STATUS_SUCCESS; // already initialized
+
+    // Create the IddCx adapter. This kicks off EvtIddCxAdapterInitFinished, where we create
+    // and plug in the monitor. Without this call the OS never enumerates our display — this
+    // was the missing link in the first revision.
+    IDDCX_ADAPTER_CAPS caps = {};
+    caps.Size = sizeof(caps);
+    caps.MaxMonitorsSupported = 1; // single-display MVP (array-ready)
+    caps.EndPointDiagnostics.Size = sizeof(caps.EndPointDiagnostics);
+    caps.EndPointDiagnostics.GammaSupport = IDDCX_FEATURE_IMPLEMENTATION_NONE;
+    caps.EndPointDiagnostics.TransmissionType = IDDCX_TRANSMISSION_TYPE_OTHER;
+    caps.EndPointDiagnostics.pEndPointFriendlyName = L"SecondScreen Local Display";
+    caps.EndPointDiagnostics.pEndPointManufacturerName = L"SecondScreen Local";
+    caps.EndPointDiagnostics.pEndPointModelName = L"Virtual Display";
+
+    WDF_OBJECT_ATTRIBUTES adapterAttr;
+    WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&adapterAttr, AdapterContext);
+
+    IDARG_IN_ADAPTER_INIT init = {};
+    init.WdfDevice = device;
+    init.pCaps = &caps;
+    init.ObjectAttributes = &adapterAttr;
+
+    IDARG_OUT_ADAPTER_INIT out = {};
+    NTSTATUS status = IddCxAdapterInitAsync(&init, &out);
+    if (NT_SUCCESS(status)) ctx->Adapter = out.AdapterObject;
+    return status;
 }
 
 NTSTATUS EvtIddCxAdapterInitFinished(IDDCX_ADAPTER adapter, const IDARG_IN_ADAPTER_INIT_FINISHED* args) {
     if (!NT_SUCCESS(args->AdapterInitStatus)) return STATUS_SUCCESS;
 
-    auto* ctx = GetAdapterContext(WdfObjectContextGetObject(adapter) ? nullptr : nullptr);
+    auto* ctx = GetAdapterContext(adapter);
+    ctx->Adapter = adapter;
     // Create and plug in one monitor (single-display MVP; array-ready for multi-display).
+    // STUB(driver): MonitorDescription is sent with an empty EDID (DataSize=0). On real
+    // hardware IddCx expects a valid 128-byte EDID base block here; supply one before the
+    // Display-2 path can enumerate. Modes themselves come from the mode callbacks below.
     IDDCX_MONITOR_INFO monitorInfo = {};
     monitorInfo.Size = sizeof(monitorInfo);
     monitorInfo.MonitorType = DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INTERNAL;

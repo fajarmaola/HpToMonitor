@@ -15,7 +15,9 @@ public static class CryptoUtil
     public static (ECDiffieHellman key, byte[] publicSpki) CreateEcdh()
     {
         var ecdh = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
-        byte[] spki = ecdh.PublicKey.ExportSubjectPublicKeyInfo();
+        // AsymmetricAlgorithm.ExportSubjectPublicKeyInfo() reliably exports the SPKI (X.509)
+        // public key, matching Java's PublicKey.getEncoded() on Android.
+        byte[] spki = ecdh.ExportSubjectPublicKeyInfo();
         return (ecdh, spki);
     }
 

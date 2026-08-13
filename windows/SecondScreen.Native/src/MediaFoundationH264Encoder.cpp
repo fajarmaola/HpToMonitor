@@ -2,6 +2,7 @@
 #include <mfapi.h>
 #include <mferror.h>
 #include <codecapi.h>
+#include <wmcodecdsp.h>   // CLSID_VideoProcessorMFT
 #include <vector>
 
 // Media Foundation H.264 encode. NOTE(hardware): this path requires a real GPU + MF stack to

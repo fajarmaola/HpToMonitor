@@ -48,7 +48,13 @@ created (per the user's explicit engineering rule).
 - Wi-Fi Direct transport (Windows.Devices.WiFiDirect P2P adapter) — Phase 4.
 
 ## Backlog / next
+- P0 (fixed in audit): C# shared namespace blocker, native link libs, IddCx adapter-init, encoder include.
 - P1: Build on Windows + Android, fix any compile errors surfaced by the real toolchains.
-- P1: Pass Android resolution to the driver so Display 2 advertises the exact phone mode
-  (registry/IOCTL from SwDevice.cpp).
-- P2: Optional Android→Windows keyboard, audio-forwarding toggle, multi-display, HEVC path.
+- P1 BLOCKER (Display-2 path): supply a valid 128-byte EDID in Driver.cpp + build/sign the WDK driver.
+- P1: pass Android resolution to the driver (registry/IOCTL) so Display 2 matches the phone.
+- P2: zero-copy swap-chain→encoder, Android→Windows keyboard, audio toggle, multi-display, HEVC.
+
+## Audit result (this session)
+- Working MVP path (LAN + primary-display capture + H.264 + touch) is theoretically build-ready.
+- Display-2 (IddCx) path is INCOMPLETE: EDID STUB + WDK build/sign remain (cannot be done in Linux env).
+- Crypto interop verified by design + test vectors (shared/protocol/TEST_VECTORS.md); not runtime-tested.

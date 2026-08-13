@@ -96,6 +96,9 @@ class ConnectionManager(private val appContext: Context) {
     }
 
     private suspend fun handleHelloAck(msg: JSONObject) {
+        if (msg.optInt("v", Protocol.VERSION) != Protocol.VERSION) {
+            fail("Protocol version mismatch with host"); return
+        }
         val peerSpki = android.util.Base64.decode(msg.getString("pubKey"), android.util.Base64.DEFAULT)
         sharedSecret = Crypto.deriveSharedSecret(keyPair, peerSpki)
         trusted = msg.optBoolean("trusted", false)

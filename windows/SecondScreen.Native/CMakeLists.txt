@@ -20,6 +20,8 @@ target_include_directories(SecondScreen.Native PRIVATE
 target_link_libraries(SecondScreen.Native PRIVATE
     d3d11 dxgi dxguid
     mf mfplat mfuuid mfreadwrite
+    # CLSID_VideoProcessorMFT + CODECAPI/DMO GUIDs, COM, and SwDevice.
+    wmcodecdspuuid strmiids ole32 uuid
     # cfgmgr32 is used by the SwDevice virtual-display path.
     cfgmgr32
 )
