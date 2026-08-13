@@ -1,0 +1,70 @@
+; SecondScreenDisplay.inf — IddCx indirect display driver for SecondScreen Local.
+; Install: pnputil /add-driver SecondScreenDisplay.inf /install   (see docs/DRIVER_SETUP.md)
+
+[Version]
+Signature   = "$WINDOWS NT$"
+Class       = Display
+ClassGuid   = {4d36e968-e325-11ce-bfc1-08002be10318}
+Provider    = %ManufacturerName%
+CatalogFile = SecondScreenDisplay.cat
+DriverVer   = ; set by inf2cat / stampinf
+PnpLockdown = 1
+
+[Manufacturer]
+%ManufacturerName% = Standard,NT$ARCH$.10.0...16299
+
+[Standard.NT$ARCH$.10.0...16299]
+%DeviceName% = SecondScreenDisplay_Install, Root\SecondScreenDisplay
+
+[SourceDisksFiles]
+SecondScreenDisplay.dll = 1
+
+[SourceDisksNames]
+1 = %DiskName%
+
+[DestinationDirs]
+DefaultDestDir = 13 ; DIRID_DRIVER_STORE
+
+; IddCx is a UMDF-based reflector. The driver runs in user mode under WUDF.
+[SecondScreenDisplay_Install.NT]
+CopyFiles = UMDriverCopy
+Include   = WUDFRD.inf
+Needs     = WUDFRD.NT
+
+[SecondScreenDisplay_Install.NT.hw]
+AddReg = SecondScreenDisplay_AddReg
+
+[SecondScreenDisplay_AddReg]
+HKR,, "IddCxFlags", 0x00010001, 0x01
+
+[SecondScreenDisplay_Install.NT.Services]
+AddService = WUDFRd, 0x000001fa, WUDFRD_ServiceInstall
+
+[WUDFRD_ServiceInstall]
+DisplayName   = %WudfRdDisplayName%
+ServiceType   = 1
+StartType     = 3
+ErrorControl  = 1
+ServiceBinary = %12%\WUDFRd.sys
+
+[SecondScreenDisplay_Install.NT.Wdf]
+UmdfService              = SecondScreenDisplay, SecondScreenDisplay_UmdfInstall
+UmdfServiceOrder         = SecondScreenDisplay
+UmdfKernelModeClientPolicy = AllowKernelModeClients
+UmdfFileObjectPolicy     = AllowNullAndUnknownFileObjects
+UmdfMethodNeitherAction  = Copy
+UmdfFsContextUsePolicy   = CannotUseFsContexts
+
+[SecondScreenDisplay_UmdfInstall]
+UmdfLibraryVersion = 2.31.0
+ServiceBinary      = %13%\SecondScreenDisplay.dll
+UmdfExtensions     = IddCx0102
+
+[UMDriverCopy]
+SecondScreenDisplay.dll
+
+[Strings]
+ManufacturerName  = "SecondScreen Local"
+DeviceName        = "SecondScreen Local Virtual Display"
+DiskName          = "SecondScreen Local Installation Disk"
+WudfRdDisplayName = "Windows Driver Foundation - User-mode Driver Framework Reflector"

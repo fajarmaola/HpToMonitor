@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>SecondScreen.Desktop</RootNamespace>
+    <AssemblyName>SecondScreen.Desktop</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Platforms>AnyCPU;x64</Platforms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SecondScreen.Core\SecondScreen.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Copy the native DLL next to the exe. Build SecondScreen.Native first (docs/BUILD_WINDOWS.md).
+       Override the path with the SSL_NATIVE_DLL env var if you built it elsewhere. -->
+  <ItemGroup>
+    <None Include="$(SSL_NATIVE_DLL)" Condition="'$(SSL_NATIVE_DLL)' != ''">
+      <Link>SecondScreen.Native.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\SecondScreen.Native\build\Release\SecondScreen.Native.dll"
+          Condition="'$(SSL_NATIVE_DLL)' == '' And Exists('..\SecondScreen.Native\build\Release\SecondScreen.Native.dll')">
+      <Link>SecondScreen.Native.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>
