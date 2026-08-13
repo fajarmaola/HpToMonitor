@@ -5,8 +5,13 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Core components (native DLL, C# tests, Core, Desktop, publish) MUST fail the workflow if
+# they fail — no continue-on-error, no optional steps. The IddCx driver is a SEPARATE job so
+# its outcome is reported independently (compile vs. signing vs. runtime are different things).
+
 jobs:
-  build-app:
+  windows-core:
+    name: Core / Desktop / Native / Tests / EXE
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,54 +21,69 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Build native DLL (DXGI capture + Media Foundation H.264)
+      - name: C - Build native DLL (DXGI capture + Media Foundation H.264)
         run: |
           cmake -S windows/SecondScreen.Native -B windows/SecondScreen.Native/build -A x64
           cmake --build windows/SecondScreen.Native/build --config Release
+          if (!(Test-Path windows/SecondScreen.Native/build/Release/SecondScreen.Native.dll)) { throw "Native DLL not produced" }
 
-      - name: Run crypto/protocol unit tests (same vectors as Android)
+      - name: C# TESTS - crypto/protocol vectors (same as Android)
         run: dotnet test windows/SecondScreen.Tests/SecondScreen.Tests.csproj -c Release --logger "trx;LogFileName=results.trx"
 
-      - name: Build Core + Desktop (WPF)
+      - name: A/B - Build Core + Desktop (WPF)
         env:
           SSL_NATIVE_DLL: ${{ github.workspace }}\windows\SecondScreen.Native\build\Release\SecondScreen.Native.dll
         run: dotnet build windows/SecondScreenLocal.sln -c Release
 
-      - name: Publish self-contained Desktop .exe
+      - name: D - Publish self-contained SecondScreenLocal.exe
         env:
           SSL_NATIVE_DLL: ${{ github.workspace }}\windows\SecondScreen.Native\build\Release\SecondScreen.Native.dll
-        run: dotnet publish windows/SecondScreen.Desktop/SecondScreen.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
+        run: |
+          dotnet publish windows/SecondScreen.Desktop/SecondScreen.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
+          copy windows\SecondScreen.Native\build\Release\SecondScreen.Native.dll publish\
+          if (!(Test-Path publish/SecondScreenLocal.exe)) { throw "SecondScreenLocal.exe not produced" }
 
-      - name: Copy native DLL next to the exe
-        run: copy windows\SecondScreen.Native\build\Release\SecondScreen.Native.dll publish\
-
-      - name: Upload Windows app
+      - name: Upload SecondScreenLocal-Windows-x64
         uses: actions/upload-artifact@v4
         with:
-          name: SecondScreenLocal-windows
+          name: SecondScreenLocal-Windows-x64
           path: publish/
+          if-no-files-found: error
 
-  build-driver:
+  windows-driver:
+    name: IddCx driver compile (WDK)
     runs-on: windows-latest
-    continue-on-error: true   # WDK availability on hosted runners varies; surface errors, don't block
+    # NOT continue-on-error: a genuine compile failure makes THIS job red so it is visible.
+    # Core artifacts are unaffected (separate job). Signing/runtime are handled separately below.
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Windows Driver Kit (best effort)
-        continue-on-error: true
-        run: choco install windowsdriverkit11 -y --no-progress
+      - name: Install Windows Driver Kit (WDK)
+        shell: pwsh
+        run: |
+          # Adds the WDK + matching SDK VS build components to the existing VS 2022 install.
+          choco install windowsdriverkit11 -y --no-progress
+          echo "WDK install step completed"
 
-      - name: Build IddCx virtual display driver
+      - name: DRIVER_COMPILE - build IddCx driver (x64/Release), no signing
         shell: cmd
         run: |
           for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VSPATH=%%i
           call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat"
-          msbuild windows\SecondScreen.DisplayDriver\SecondScreen.DisplayDriver.vcxproj /p:Configuration=Release /p:Platform=x64
+          msbuild windows\SecondScreen.DisplayDriver\SecondScreen.DisplayDriver.vcxproj /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off
+          if not exist "windows\SecondScreen.DisplayDriver\x64\Release\SecondScreenDisplay\SecondScreenDisplay.dll" if not exist "windows\SecondScreen.DisplayDriver\x64\Release\SecondScreenDisplay.dll" (echo DRIVER_COMPILE_FAILED & exit /b 1)
+          echo DRIVER_COMPILE_SUCCESS
 
-      - name: Upload driver package (if built)
-        if: always()
+      - name: DRIVER_SIGNING_REQUIRED (informational)
+        run: echo "Signing is a SEPARATE step. Test signing needs a local test cert; distribution needs an EV cert + MS attestation. Not performed in CI."
+
+      - name: DRIVER_RUNTIME_TEST_REQUIRED (informational)
+        run: echo "Loading the driver + enumerating Display 2 requires a real Windows machine with test signing enabled. Not possible on hosted runners."
+
+      - name: Upload SecondScreenLocal-DisplayDriver
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: SecondScreenLocal-driver
+          name: SecondScreenLocal-DisplayDriver
           path: windows/SecondScreen.DisplayDriver/x64/Release/
-          if-no-files-found: warn
+          if-no-files-found: error

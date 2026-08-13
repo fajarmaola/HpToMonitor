@@ -30,8 +30,8 @@ Source: "{#AppDir}\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
 Source: "{#DriverDir}\*"; DestDir: "{app}\driver"; Flags: recursesubdirs ignoreversion skipifsourcedoesntexist
 
 [Icons]
-Name: "{group}\SecondScreen Local"; Filename: "{app}\SecondScreen.Desktop.exe"
-Name: "{commondesktop}\SecondScreen Local"; Filename: "{app}\SecondScreen.Desktop.exe"; Tasks: desktopicon
+Name: "{group}\SecondScreen Local"; Filename: "{app}\SecondScreenLocal.exe"
+Name: "{commondesktop}\SecondScreen Local"; Filename: "{app}\SecondScreenLocal.exe"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional icons:"
@@ -41,7 +41,7 @@ Name: "installdriver"; Description: "Install the virtual display driver (enables
 ; Install the IddCx driver via pnputil when the user opts in (needs a signed .cat).
 Filename: "pnputil.exe"; Parameters: "/add-driver ""{app}\driver\SecondScreenDisplay.inf"" /install"; \
   Flags: runhidden; Tasks: installdriver; StatusMsg: "Installing virtual display driver..."
-Filename: "{app}\SecondScreen.Desktop.exe"; Description: "Launch SecondScreen Local"; Flags: postinstall nowait skipifsilent
+Filename: "{app}\SecondScreenLocal.exe"; Description: "Launch SecondScreen Local"; Flags: postinstall nowait skipifsilent
 
 [UninstallRun]
 Filename: "pnputil.exe"; Parameters: "/delete-driver SecondScreenDisplay.inf /uninstall /force"; Flags: runhidden; RunOnceId: "RemoveDriver"

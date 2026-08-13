@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Verification-only: compiles ALL of SecondScreen.Core on any OS (net8.0, no WPF) to catch
+       C# compile errors before the Windows CI runs. P/Invoke DllImports compile fine here; they
+       only need Windows at RUNTIME. This does NOT replace the real net8.0-windows build. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <NoWarn>CA1416</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\SecondScreen.Core\**\*.cs" />
+    <Compile Include="..\..\shared\protocol\csharp\Protocol.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Text.Json" Version="8.0.4" />
+  </ItemGroup>
+</Project>
