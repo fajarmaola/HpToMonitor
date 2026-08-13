@@ -1,19 +1,22 @@
 ; SecondScreenDisplay.inf — IddCx indirect display driver for SecondScreen Local.
 ; Install: pnputil /add-driver SecondScreenDisplay.inf /install   (see docs/DRIVER_SETUP.md)
+; Structure mirrors Microsoft's official IddSampleDriver.inf (DIRID 12\UMDF + WUDFRD includes),
+; which passes InfVerif on the current WDK (no DIRID-13 rule, no manual WUDFRd service).
 
 [Version]
+PnpLockdown = 1
 Signature   = "$WINDOWS NT$"
 Class       = Display
 ClassGuid   = {4d36e968-e325-11ce-bfc1-08002be10318}
+ClassVer    = 2.0
 Provider    = %ManufacturerName%
 CatalogFile = SecondScreenDisplay.cat
-DriverVer   = ; set by inf2cat / stampinf
-PnpLockdown = 1
+DriverVer   = ; set by stampinf
 
 [Manufacturer]
-%ManufacturerName% = Standard,NT$ARCH$.10.0...16299
+%ManufacturerName% = Standard,NT$ARCH$.10.0...17763
 
-[Standard.NT$ARCH$.10.0...16299]
+[Standard.NT$ARCH$.10.0...17763]
 %DeviceName% = SecondScreenDisplay_Install, Root\SecondScreenDisplay
 
 [SourceDisksFiles]
@@ -22,49 +25,45 @@ SecondScreenDisplay.dll = 1
 [SourceDisksNames]
 1 = %DiskName%
 
-[DestinationDirs]
-DefaultDestDir = 13 ; DIRID_DRIVER_STORE
+; =================== UMDF / IddCx Device ==================================
 
-; IddCx is a UMDF-based reflector. The driver runs in user mode under WUDF.
 [SecondScreenDisplay_Install.NT]
-CopyFiles = UMDriverCopy
 Include   = WUDFRD.inf
 Needs     = WUDFRD.NT
+CopyFiles = UMDriverCopy
 
 [SecondScreenDisplay_Install.NT.hw]
-AddReg = SecondScreenDisplay_AddReg
+Include = WUDFRD.inf
+Needs   = WUDFRD.NT.HW
+AddReg  = SecondScreenDisplay_HardwareDeviceSettings
 
-[SecondScreenDisplay_AddReg]
-HKR,, "IddCxFlags", 0x00010001, 0x01
+[SecondScreenDisplay_HardwareDeviceSettings]
+; IddCx reflector requires the IndirectKmd kernel-mode component as an upper filter.
+HKR,, "UpperFilters", %REG_MULTI_SZ%, "IndirectKmd"
 
 [SecondScreenDisplay_Install.NT.Services]
-AddService = WUDFRd, 0x000001fa, WUDFRD_ServiceInstall
-
-[WUDFRD_ServiceInstall]
-DisplayName   = %WudfRdDisplayName%
-ServiceType   = 1
-StartType     = 3
-ErrorControl  = 1
-ServiceBinary = %12%\WUDFRd.sys
+Include = WUDFRD.inf
+Needs   = WUDFRD.NT.Services
 
 [SecondScreenDisplay_Install.NT.Wdf]
-UmdfService              = SecondScreenDisplay, SecondScreenDisplay_UmdfInstall
-UmdfServiceOrder         = SecondScreenDisplay
+UmdfService                = SecondScreenDisplay, SecondScreenDisplay_UmdfInstall
+UmdfServiceOrder           = SecondScreenDisplay
 UmdfKernelModeClientPolicy = AllowKernelModeClients
-UmdfFileObjectPolicy     = AllowNullAndUnknownFileObjects
-UmdfMethodNeitherAction  = Copy
-UmdfFsContextUsePolicy   = CannotUseFsContexts
 
 [SecondScreenDisplay_UmdfInstall]
-UmdfLibraryVersion = 2.31.0
-ServiceBinary      = %13%\SecondScreenDisplay.dll
+UmdfLibraryVersion = $UMDFVERSION$
+ServiceBinary      = %12%\UMDF\SecondScreenDisplay.dll
 UmdfExtensions     = IddCx0102
+
+[DestinationDirs]
+UMDriverCopy = 12,UMDF ; copy to drivers\umdf
 
 [UMDriverCopy]
 SecondScreenDisplay.dll
 
 [Strings]
-ManufacturerName  = "SecondScreen Local"
-DeviceName        = "SecondScreen Local Virtual Display"
-DiskName          = "SecondScreen Local Installation Disk"
-WudfRdDisplayName = "Windows Driver Foundation - User-mode Driver Framework Reflector"
+ManufacturerName = "SecondScreen Local"
+DeviceName       = "SecondScreen Local Virtual Display"
+DiskName         = "SecondScreen Local Installation Disk"
+REG_MULTI_SZ     = 0x00010000
+REG_SZ           = 0x00000000
