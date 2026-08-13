@@ -66,14 +66,25 @@ jobs:
       - name: Restore WDK NuGet packages (provides wudfwdm.h, wdf.h, iddcx.h + UMDF toolset)
         shell: pwsh
         working-directory: windows/SecondScreen.DisplayDriver
-        run: nuget restore packages.config -PackagesDirectory packages
+        run: nuget restore packages.config -PackagesDirectory packages -Source https://api.nuget.org/v3/index.json -Verbosity detailed
+
+      - name: VERIFY - WDK NuGet props are present (fail loudly with a clear message if not)
+        shell: pwsh
+        working-directory: windows/SecondScreen.DisplayDriver
+        run: |
+          Write-Host "===== Restored packages folder ====="
+          if (Test-Path packages) { Get-ChildItem packages -Directory | Select-Object -ExpandProperty Name } else { Write-Host "packages\ folder DOES NOT EXIST -> nuget restore failed" }
+          $props = "packages\Microsoft.Windows.WDK.x64.10.0.28000.2526\build\native\Microsoft.Windows.WDK.x64.props"
+          Write-Host "===== Looking for WDK props: $props ====="
+          if (Test-Path $props) { Write-Host "OK: WDK NuGet props found." }
+          else { Write-Error "MISSING WDK NuGet props ($props). Directory.Build.props import will be skipped, so wudfwdm.h will not be found."; exit 1 }
 
       - name: DRIVER_COMPILE - build IddCx driver (x64/Release), no signing
         shell: cmd
         run: |
           for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VSPATH=%%i
           call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat"
-          msbuild windows\SecondScreen.DisplayDriver\SecondScreen.DisplayDriver.vcxproj /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off
+          msbuild windows\SecondScreen.DisplayDriver\SecondScreen.DisplayDriver.vcxproj /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off /v:normal
           if not exist "windows\SecondScreen.DisplayDriver\x64\Release\SecondScreenDisplay\SecondScreenDisplay.dll" if not exist "windows\SecondScreen.DisplayDriver\x64\Release\SecondScreenDisplay.dll" (echo DRIVER_COMPILE_FAILED & exit /b 1)
           echo DRIVER_COMPILE_SUCCESS
 
