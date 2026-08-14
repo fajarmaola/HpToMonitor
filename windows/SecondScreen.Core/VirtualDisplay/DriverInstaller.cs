@@ -176,7 +176,7 @@ public static class DriverInstaller
         r.Success = ok && code == 0;
         r.RebootRequired = r.Success;
         r.Message = r.Success
-            ? "Test Signing aktif. Restart Windows, lalu tekan Mulai lagi."
+            ? "Test Signing aktif setelah RESTART. Jika sesudah restart tetap nonaktif, matikan Secure Boot di BIOS/UEFI lalu ulangi."
             : $"Gagal mengaktifkan Test Signing (kode {code}).";
         log?.Invoke(r.Message);
         return r;
