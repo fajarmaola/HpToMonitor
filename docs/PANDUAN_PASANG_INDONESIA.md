@@ -35,54 +35,63 @@ Semua file jadi tersimpan sebagai **Artifacts** di tiap run. Buka:
 
 ---
 
-## C. Pasang driver layar virtual di PC Windows
+## C. Pasang driver layar virtual di PC Windows (metode PowerShell — TANPA Visual Studio/SDK)
 
-> Driver ini **belum ditandatangani resmi** (biaya sertifikat mahal), jadi untuk pemakaian pribadi kita
-> nyalakan **Test Signing**. Ini aman untuk testing. Butuh **1x restart PC**.
+> Driver ini **belum ditandatangani resmi**, jadi kita nyalakan **Test Signing** + pakai sertifikat
+> test buatan sendiri. Semua pakai **PowerShell bawaan Windows** (tidak perlu makecert/signtool/SDK).
 
-### Langkah 1 — Nyalakan Test Signing (sekali saja)
-1. Klik Start, ketik **cmd**, klik kanan **Command Prompt** → **Run as administrator**.
-2. Ketik perintah ini lalu Enter:
+### Langkah 1 — Nyalakan Test Signing (sekali saja, butuh 1x restart)
+1. Klik Start, ketik **powershell**, klik kanan **Windows PowerShell** → **Run as administrator**.
+2. Jalankan:
    ```
    bcdedit /set testsigning on
    ```
-3. **Restart PC.** Setelah nyala lagi, biasanya muncul tulisan kecil "Test Mode" di pojok kanan bawah layar — itu normal.
+3. **Restart PC.** Setelah nyala lagi biasanya ada tulisan "Test Mode" di pojok kanan bawah (normal).
 
-### Langkah 2 — Buat & percayai sertifikat test (sekali saja)
-Buka **Command Prompt as administrator**, masuk ke folder driver (yang tadi di-download), lalu:
-```
-REM buat sertifikat test
-makecert -r -pe -ss PrivateCertStore -n "CN=SecondScreenTest" SecondScreenTest.cer
+### Langkah 2 — Pindah ke folder driver
+1. Buka File Explorer, masuk ke folder hasil ekstrak **`SecondScreenLocal-DisplayDriver`**
+   (folder yang berisi `SecondScreenDisplay.inf`, `.dll`, `.cat`).
+2. Klik kolom alamat di atas, **salin path-nya** (contoh: `C:\Users\Nama\Downloads\SecondScreenLocal-DisplayDriver`).
+3. Di **PowerShell (Administrator)**, ketik `cd ` lalu tempel path tadi di dalam tanda kutip:
+   ```
+   cd "C:\Users\Nama\Downloads\SecondScreenLocal-DisplayDriver"
+   ```
+4. Cek file-nya ada:
+   ```
+   dir SecondScreenDisplay.*
+   ```
+   Harus muncul `SecondScreenDisplay.inf`, `.dll`, dan `.cat`.
 
-REM percayai sertifikat tersebut
-certutil -addstore -f Root SecondScreenTest.cer
-certutil -addstore -f TrustedPublisher SecondScreenTest.cer
+### Langkah 3 — Buat sertifikat test, percayai, tandatangani catalog, lalu pasang
+Salin-tempel **seluruh blok** ini ke PowerShell (Administrator), tekan Enter:
+```powershell
+# buat sertifikat code-signing test (tanpa makecert)
+$cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=SecondScreenTest" -CertStoreLocation "Cert:\CurrentUser\My"
 
-REM tandatangani driver + catalog dengan sertifikat test
-signtool sign /v /s PrivateCertStore /n SecondScreenTest /fd sha256 SecondScreenDisplay.dll
-signtool sign /v /s PrivateCertStore /n SecondScreenTest /fd sha256 SecondScreenDisplay.cat
-```
-> `makecert`, `signtool`, `certutil` tersedia kalau kamu punya Visual Studio / Windows SDK.
-> Kalau tidak punya, cara termudah: install **Windows SDK** (gratis) atau jalankan dari
-> "Developer Command Prompt".
+# percayai sertifikat: import ke Trusted Root + Trusted Publishers
+Export-Certificate -Cert $cert -FilePath "$env:TEMP\SST.cer" | Out-Null
+Import-Certificate -FilePath "$env:TEMP\SST.cer" -CertStoreLocation "Cert:\LocalMachine\Root" | Out-Null
+Import-Certificate -FilePath "$env:TEMP\SST.cer" -CertStoreLocation "Cert:\LocalMachine\TrustedPublisher" | Out-Null
 
-### Langkah 3 — Pasang driver
-Di **Command Prompt as administrator**, di folder driver:
-```
+# tandatangani CATALOG saja (jangan tandatangani .dll — nanti hash di .cat jadi tidak cocok)
+Set-AuthenticodeSignature -FilePath ".\SecondScreenDisplay.cat" -Certificate $cert
+
+# pasang driver
 pnputil /add-driver SecondScreenDisplay.inf /install
 ```
+Kalau berhasil, muncul: `Driver package added successfully` / `Added driver packages: 1`.
 
 ### Langkah 4 — Munculkan "Display 2"
-- Cara paling gampang: jalankan **`SecondScreenLocal.exe`** (aplikasi PC). Aplikasi akan otomatis
-  membuat perangkat layar virtual → Windows memunculkan **Display 2**.
+- Jalankan **`SecondScreenLocal.exe`** (aplikasi PC). Aplikasi otomatis membuat perangkat layar
+  virtual → Windows memunculkan **Display 2**.
 - Cek: **Settings → System → Display** → sekarang ada 2 layar.
-- Pilih **"Extend these displays"** supaya layar kedua jadi perluasan (bukan duplikat).
+- Pilih **"Extend these displays"**.
 
 ### Langkah 5 — Sambungkan HP & mulai streaming
-1. Pastikan PC dan HP **satu jaringan WiFi yang sama**.
+1. Pastikan PC dan HP **satu jaringan WiFi**.
 2. Buka **SecondScreenLocal.exe** di PC dan aplikasi **SecondScreen Local** di HP.
-3. HP akan menemukan PC otomatis (LAN discovery). Lakukan **pairing** (masukkan PIN yang tampil).
-4. Selesai — layar Display 2 dari PC akan tampil di HP. 🎉
+3. Lakukan **pairing** (masukkan PIN yang tampil).
+4. Layar Display 2 tampil di HP. 🎉
 
 ---
 
