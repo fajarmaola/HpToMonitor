@@ -210,10 +210,18 @@ NTSTATUS EvtDeviceD0Entry(WDFDEVICE device, WDF_POWER_DEVICE_STATE) {
     caps.MaxMonitorsSupported = 1; // single-display MVP (array-ready)
     caps.EndPointDiagnostics.Size = sizeof(caps.EndPointDiagnostics);
     caps.EndPointDiagnostics.GammaSupport = IDDCX_FEATURE_IMPLEMENTATION_NONE;
-    caps.EndPointDiagnostics.TransmissionType = IDDCX_TRANSMISSION_TYPE_OTHER;
+    caps.EndPointDiagnostics.TransmissionType = IDDCX_TRANSMISSION_TYPE_WIRED_OTHER;
     caps.EndPointDiagnostics.pEndPointFriendlyName = L"SecondScreen Local Display";
     caps.EndPointDiagnostics.pEndPointManufacturerName = L"SecondScreen Local";
     caps.EndPointDiagnostics.pEndPointModelName = L"Virtual Display";
+
+    // Firmware/hardware versions are required by IddCx; omitting them fails adapter power-up
+    // (Code 10 / STATUS_DEVICE_POWER_FAILURE).
+    IDDCX_ENDPOINT_VERSION version = {};
+    version.Size = sizeof(version);
+    version.MajorVer = 1;
+    caps.EndPointDiagnostics.pFirmwareVersion = &version;
+    caps.EndPointDiagnostics.pHardwareVersion = &version;
 
     WDF_OBJECT_ATTRIBUTES adapterAttr;
     WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&adapterAttr, AdapterContext);
