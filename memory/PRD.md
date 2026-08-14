@@ -198,3 +198,16 @@ created (per the user's explicit engineering rule).
 - Fixed in release.yml + windows.yml: check x64\Release\SecondScreen.DisplayDriver\SecondScreenDisplay.dll
   (fallback flat dll); stage installer driver from that package folder (has the .cat) into publish\driver.
 - Also fixed .iss default DriverDir + Desktop.csproj glob to the SecondScreen.DisplayDriver package folder.
+
+## Fix: driver not loading in Test Mode (unsigned .cat) + wrong Test Signing status
+- Symptom: Test Mode ON (watermark) + Secure Boot off + phone connected, but no virtual display device.
+  Panel wrongly showed Test Signing "nonaktif".
+- ROOT CAUSE: driver built with SignMode=Off -> catalog UNSIGNED. Test Mode allows self/test-signed
+  drivers but rejects TOTALLY unsigned ones (Code 52) -> SwDeviceCreate device never loads.
+- FIX: added windows/SecondScreen.DisplayDriver/testcert.pfx (self-signed code-signing, EKU CodeSigning,
+  pass hptomonitor). release.yml now test-signs publish\driver\*.cat via signtool (SHA256 + timestamp)
+  after staging, before building installer. Keeps Test Mode requirement.
+- Also fixed DriverInstaller.IsTestSigningOn(): return null (unknown) instead of false when bcdedit can't
+  be read (non-elevated/localized), so panel no longer mislabels active Test Signing as "nonaktif".
+- VERIFY on user PC: Save to GitHub -> new build test-signs cat -> reinstall -> keep Test Mode -> connect
+  phone -> "HP ke Monitor Virtual Display" should load.

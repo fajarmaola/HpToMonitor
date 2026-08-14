@@ -55,6 +55,13 @@ jobs:
           if (Test-Path $pkg) { Copy-Item -Recurse -Force "$pkg\*" publish\driver\ }
           else { Copy-Item -Force windows\SecondScreen.DisplayDriver\x64\Release\SecondScreenDisplay.* publish\driver\ }
           if (!(Test-Path publish\driver\SecondScreenDisplay.inf)) { throw "driver package (inf) missing in publish\driver" }
+          # Test-sign the catalog so the driver LOADS under Test Mode (unsigned .cat = Code 52).
+          $signtool = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*\x64\*" } | Select-Object -First 1).FullName
+          if (-not $signtool) { throw "signtool.exe not found" }
+          Write-Host "signtool = $signtool"
+          $cat = (Get-ChildItem publish\driver -Filter *.cat | Select-Object -First 1).FullName
+          & "$signtool" sign /fd SHA256 /f windows\SecondScreen.DisplayDriver\testcert.pfx /p hptomonitor /td SHA256 /tr http://timestamp.digicert.com "$cat"
+          if ($LASTEXITCODE -ne 0) { throw "driver catalog signing failed" }
           choco install innosetup --no-progress -y
           $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
           & "$iscc" "/DAppVersion=$ver" "/DAppDir=$env:GITHUB_WORKSPACE\publish" "/DDriverDir=$env:GITHUB_WORKSPACE\publish\driver" windows\installer\SecondScreenLocal.iss

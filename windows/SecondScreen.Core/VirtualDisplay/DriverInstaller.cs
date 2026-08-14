@@ -89,7 +89,7 @@ public static class DriverInstaller
             outp.IndexOf("Access is", StringComparison.OrdinalIgnoreCase) >= 0)
             return null;
         var m = Regex.Match(outp, @"testsigning\s+(Yes|No|On|Off)", RegexOptions.IgnoreCase);
-        if (!m.Success) return false; // bcdedit omits the line when test-signing is off
+        if (!m.Success) return null; // can't read reliably (non-elevated/localized) -> "unknown"
         var v = m.Groups[1].Value.ToLowerInvariant();
         return v == "yes" || v == "on";
     }
