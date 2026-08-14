@@ -92,6 +92,11 @@ public partial class MainWindow : Window
         PinText.Text = $"{pin[..3]}   {pin[3..]}";
         PinPromptText.Text = $"\"{_session?.PeerDevice.Name}\" wants to connect. Enter this code on Android:";
         DeviceNameText.Text = _session?.PeerDevice.Name ?? "Android";
+        Activate();
+        // Also show the PIN in a popup so it is always visible (never clipped by the window).
+        MessageBox.Show(this,
+            $"Pairing code for \"{_session?.PeerDevice.Name ?? "Android"}\":\n\n        {pin[..3]}  {pin[3..]}\n\nEnter this 6-digit code in the SecondScreen app on your Android device.",
+            "SecondScreen — Pairing Code", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private void UpdateDiagnostics()
