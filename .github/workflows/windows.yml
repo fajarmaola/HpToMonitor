@@ -5,13 +5,11 @@ on:
   pull_request:
   workflow_dispatch:
 
-# Core components (native DLL, C# tests, Core, Desktop, publish) MUST fail the workflow if
-# they fail — no continue-on-error, no optional steps. The IddCx driver is a SEPARATE job so
-# its outcome is reported independently (compile vs. signing vs. runtime are different things).
-
+# Single job that builds everything (native DLL, tests, Core/Desktop EXE, IddCx driver) and packages
+# them into ONE installer artifact: HPkeMonitor-Setup.exe (app + driver, driver installed at setup).
 jobs:
-  windows-core:
-    name: Core / Desktop / Native / Tests / EXE
+  windows:
+    name: Build single installer (app + driver)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,83 +19,59 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: C - Build native DLL (DXGI capture + Media Foundation H.264)
+      - name: Set up NuGet
+        uses: NuGet/setup-nuget@v2
+
+      - name: Build native DLL (DXGI capture + Media Foundation H.264)
         run: |
           cmake -S windows/SecondScreen.Native -B windows/SecondScreen.Native/build -A x64
           cmake --build windows/SecondScreen.Native/build --config Release
           if (!(Test-Path windows/SecondScreen.Native/build/Release/SecondScreen.Native.dll)) { throw "Native DLL not produced" }
 
-      - name: C# TESTS - crypto/protocol vectors (same as Android)
+      - name: C# tests (crypto/protocol vectors)
         run: dotnet test windows/SecondScreen.Tests/SecondScreen.Tests.csproj -c Release --logger "trx;LogFileName=results.trx"
 
-      - name: A/B - Build Core + Desktop (WPF)
-        env:
-          SSL_NATIVE_DLL: ${{ github.workspace }}\windows\SecondScreen.Native\build\Release\SecondScreen.Native.dll
-        run: dotnet build windows/SecondScreenLocal.sln -c Release
-
-      - name: D - Publish self-contained SecondScreenLocal.exe
-        env:
-          SSL_NATIVE_DLL: ${{ github.workspace }}\windows\SecondScreen.Native\build\Release\SecondScreen.Native.dll
-        run: |
-          dotnet publish windows/SecondScreen.Desktop/SecondScreen.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
-          copy windows\SecondScreen.Native\build\Release\SecondScreen.Native.dll publish\
-          if (!(Test-Path publish/SecondScreenLocal.exe)) { throw "SecondScreenLocal.exe not produced" }
-
-      - name: Upload SecondScreenLocal-Windows-x64
-        uses: actions/upload-artifact@v4
-        with:
-          name: SecondScreenLocal-Windows-x64
-          path: publish/
-          if-no-files-found: error
-
-  windows-driver:
-    name: IddCx driver compile (WDK NuGet)
-    runs-on: windows-latest
-    # NOT continue-on-error: a genuine compile failure makes THIS job red so it is visible.
-    # Core artifacts are unaffected (separate job). Signing/runtime are handled separately below.
-    # The WDK is delivered via NuGet (Microsoft.Windows.WDK.x64), so no WDK/VSIX install is
-    # needed — this is the modern, supported way to build drivers on hosted runners.
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up NuGet
-        uses: NuGet/setup-nuget@v2
-
-      - name: Restore WDK NuGet packages (provides wudfwdm.h, wdf.h, iddcx.h + UMDF toolset)
-        shell: pwsh
+      - name: Restore WDK NuGet packages
         working-directory: windows/SecondScreen.DisplayDriver
-        run: nuget restore packages.config -PackagesDirectory packages -Source https://api.nuget.org/v3/index.json -Verbosity detailed
+        run: nuget restore packages.config -PackagesDirectory packages -Source https://api.nuget.org/v3/index.json
 
-      - name: VERIFY - WDK NuGet props are present (fail loudly with a clear message if not)
-        shell: pwsh
-        working-directory: windows/SecondScreen.DisplayDriver
-        run: |
-          Write-Host "===== Restored packages folder ====="
-          if (Test-Path packages) { Get-ChildItem packages -Directory | Select-Object -ExpandProperty Name } else { Write-Host "packages\ folder DOES NOT EXIST -> nuget restore failed" }
-          $props = "packages\Microsoft.Windows.WDK.x64.10.0.28000.2526\build\native\Microsoft.Windows.WDK.x64.props"
-          Write-Host "===== Looking for WDK props: $props ====="
-          if (Test-Path $props) { Write-Host "OK: WDK NuGet props found." }
-          else { Write-Error "MISSING WDK NuGet props ($props). Directory.Build.props import will be skipped, so wudfwdm.h will not be found."; exit 1 }
-
-      - name: DRIVER_COMPILE - build IddCx driver (x64/Release), no signing
+      - name: Build IddCx driver (x64/Release, no signing)
         shell: cmd
         run: |
           for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VSPATH=%%i
           call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat"
           msbuild windows\SecondScreen.DisplayDriver\SecondScreen.DisplayDriver.vcxproj /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off /v:normal
-          if not exist "windows\SecondScreen.DisplayDriver\x64\Release\SecondScreenDisplay\SecondScreenDisplay.dll" if not exist "windows\SecondScreen.DisplayDriver\x64\Release\SecondScreenDisplay.dll" (echo DRIVER_COMPILE_FAILED & exit /b 1)
+          if not exist "windows\SecondScreen.DisplayDriver\x64\Release\SecondScreenDisplay\SecondScreenDisplay.dll" (echo DRIVER_COMPILE_FAILED & exit /b 1)
           echo DRIVER_COMPILE_SUCCESS
 
-      - name: DRIVER_SIGNING_REQUIRED (informational)
-        run: echo "Signing is a SEPARATE step. Test signing needs a local test cert; distribution needs an EV cert + MS attestation. Not performed in CI."
+      - name: Publish self-contained SecondScreenLocal.exe
+        env:
+          SSL_NATIVE_DLL: ${{ github.workspace }}\windows\SecondScreen.Native\build\Release\SecondScreen.Native.dll
+        run: |
+          $ver = "1.0.${{ github.run_number }}"
+          dotnet publish windows/SecondScreen.Desktop/SecondScreen.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:Version=$ver -p:FileVersion=$ver -p:AssemblyVersion=$ver -o publish
+          copy windows\SecondScreen.Native\build\Release\SecondScreen.Native.dll publish\
+          if (!(Test-Path publish/SecondScreenLocal.exe)) { throw "SecondScreenLocal.exe not produced" }
 
-      - name: DRIVER_RUNTIME_TEST_REQUIRED (informational)
-        run: echo "Loading the driver + enumerating Display 2 requires a real Windows machine with test signing enabled. Not possible on hosted runners."
+      - name: Stage driver next to the app (publish\driver)
+        run: |
+          New-Item -ItemType Directory -Force publish\driver | Out-Null
+          Copy-Item -Recurse -Force windows\SecondScreen.DisplayDriver\x64\Release\SecondScreenDisplay\* publish\driver\
 
-      - name: Upload SecondScreenLocal-DisplayDriver
-        if: success()
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Package ONE installer (app + driver)
+        shell: pwsh
+        run: |
+          $ver = "1.0.${{ github.run_number }}"
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          & "$iscc" "/DAppVersion=$ver" "/DAppDir=$env:GITHUB_WORKSPACE\publish" "/DDriverDir=$env:GITHUB_WORKSPACE\publish\driver" windows\installer\SecondScreenLocal.iss
+          if (!(Test-Path windows\installer\Output\HPkeMonitor-Setup.exe)) { throw "installer not produced" }
+
+      - name: Upload SINGLE artifact (installer with driver bundled)
         uses: actions/upload-artifact@v4
         with:
-          name: SecondScreenLocal-DisplayDriver
-          path: windows/SecondScreen.DisplayDriver/x64/Release/
+          name: HPkeMonitor-Setup
+          path: windows/installer/Output/HPkeMonitor-Setup.exe
           if-no-files-found: error

@@ -3,14 +3,19 @@
 ; Requires Inno Setup 6.
 
 #define AppName "HP ke Monitor"
-#define AppVersion "1.0.0"
+#ifndef AppVersion
+  #define AppVersion "1.0.0"
+#endif
 #define Publisher "PT Teleraya Digital Group"
 #define PublisherURL "https://company.teleraya.com"
-; Path to the published Desktop output (adjust if you used a different config/runtime).
-#define AppDir "..\SecondScreen.Desktop\bin\Release\net8.0-windows"
-; Path to the built + signed driver package folder (optional; comment out the [Files]/[Run]
-; driver lines if you don't ship the driver).
-#define DriverDir "..\SecondScreen.DisplayDriver\x64\Release\SecondScreenDisplay"
+; Path to the published Desktop output (overridable from CI via ISCC /DAppDir=...).
+#ifndef AppDir
+  #define AppDir "..\SecondScreen.Desktop\bin\Release\net8.0-windows"
+#endif
+; Path to the built driver package folder (overridable via ISCC /DDriverDir=...).
+#ifndef DriverDir
+  #define DriverDir "..\SecondScreen.DisplayDriver\x64\Release\SecondScreenDisplay"
+#endif
 
 [Setup]
 AppName={#AppName}
@@ -38,12 +43,12 @@ Name: "{commondesktop}\HP ke Monitor"; Filename: "{app}\SecondScreenLocal.exe"; 
 
 [Tasks]
 Name: "desktopicon"; Description: "Buat pintasan di Desktop"; GroupDescription: "Ikon tambahan:"
-Name: "installdriver"; Description: "Pasang driver layar virtual sekarang (bisa juga otomatis dari dalam aplikasi)"; GroupDescription: "Komponen opsional:"
 
 [Run]
-; Install the IddCx driver via pnputil when the user opts in (needs a signed .cat).
+; Install the IddCx virtual-display driver automatically DURING setup (installer already runs
+; elevated, so no extra UAC). This is the ONLY place the driver is installed.
 Filename: "pnputil.exe"; Parameters: "/add-driver ""{app}\driver\SecondScreenDisplay.inf"" /install"; \
-  Flags: runhidden; Tasks: installdriver; StatusMsg: "Memasang driver layar virtual..."
+  Flags: runhidden; StatusMsg: "Memasang driver Layar 2..."; Check: FileExists(ExpandConstant('{app}\driver\SecondScreenDisplay.inf'))
 Filename: "{app}\SecondScreenLocal.exe"; Description: "Jalankan HP ke Monitor"; Flags: postinstall nowait skipifsilent
 
 [UninstallRun]

@@ -165,3 +165,13 @@ created (per the user's explicit engineering rule).
 - VERIFY (cannot build/run in Linux container): Save to GitHub -> CI build .exe/.apk -> installer installs
   driver at setup -> app: language toggle, Cek Kesehatan fixes, splash, Android connect screen. Windows
   UMDF driver + streaming still need real hardware.
+
+## Session: single installer artifact + (planned) GitHub auto-update
+- CI windows.yml collapsed to ONE job -> ONE artifact "HPkeMonitor-Setup.exe" (Inno Setup via choco),
+  bundles app + driver; driver installed automatically during setup ([Run] pnputil, always, elevated).
+  .iss: #ifndef guards for AppDir/DriverDir/AppVersion (CI passes /D...); removed optional installdriver
+  task. Version = 1.0.<run_number> baked via dotnet publish -p:Version.
+- AUTO-UPDATE: pending user confirm of GitHub repo owner/name + public/private. Plan: CI creates a
+  GitHub Release (assets: installer .exe + app-debug.apk); app checks api.github.com/releases/latest,
+  compares version, downloads asset, runs installer (Win) / package installer (Android). Internet used
+  ONLY for update check/download; all config/streaming stays offline/LAN.
