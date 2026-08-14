@@ -23,25 +23,26 @@ android {
     }
 
     signingConfigs {
-        // Configure via env vars for release builds (docs/BUILD_ANDROID.md).
-        create("release") {
-            val ks = System.getenv("SSL_KEYSTORE")
-            if (ks != null) {
-                storeFile = file(ks)
-                storePassword = System.getenv("SSL_KEYSTORE_PW")
-                keyAlias = System.getenv("SSL_KEY_ALIAS")
-                keyPassword = System.getenv("SSL_KEY_PW")
-            }
+        // Stable signing key shipped in the repo so EVERY build (and every auto-update) shares the
+        // SAME signature. Without this, each CI build uses a random debug key and installs/updates
+        // fail with "Aplikasi tidak terinstal". (For stronger security, move this to a GitHub secret.)
+        create("stable") {
+            storeFile = file("hptomonitor.p12")
+            storePassword = "hptomonitor"
+            keyAlias = "hptomonitor"
+            keyPassword = "hptomonitor"
+            storeType = "PKCS12"
         }
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("stable")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            if (System.getenv("SSL_KEYSTORE") != null) {
-                signingConfig = signingConfigs.getByName("release")
-            }
+            signingConfig = signingConfigs.getByName("stable")
         }
     }
 
