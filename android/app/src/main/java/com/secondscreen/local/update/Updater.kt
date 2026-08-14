@@ -70,7 +70,7 @@ object Updater {
             conn.instanceFollowRedirects = true
             conn.connectTimeout = 20000
             conn.readTimeout = 60000
-            conn.inputStream.use { input -> out.outputStream.use { input.copyTo(it) } }
+            conn.inputStream.use { input -> out.outputStream().use { input.copyTo(it) } }
             conn.disconnect()
             out
         } catch (e: Exception) { null }

@@ -23,6 +23,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
+import com.secondscreen.local.BuildConfig
+import com.secondscreen.local.update.ReleaseInfo
+import com.secondscreen.local.update.Updater
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
