@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 
 namespace SecondScreen.Core;
@@ -79,20 +80,42 @@ public static class DriverInstaller
 
     public static bool IsInstalled() => GetInstalledVersion() != null;
 
-    // Best-effort test-signing check. bcdedit query needs admin, so a non-elevated call typically
-    // fails -> we return null ("unknown"). true/false only when we can actually read it.
+    // Reliable test-signing check that works WITHOUT admin via NtQuerySystemInformation
+    // (SystemCodeIntegrityInformation). Falls back to bcdedit, then "unknown".
     public static bool? IsTestSigningOn()
     {
+        try
+        {
+            var info = new SYSTEM_CODEINTEGRITY_INFORMATION
+            {
+                Length = (uint)Marshal.SizeOf<SYSTEM_CODEINTEGRITY_INFORMATION>()
+            };
+            int status = NtQuerySystemInformation(103 /*SystemCodeIntegrityInformation*/,
+                ref info, (int)info.Length, out _);
+            if (status == 0)
+                return (info.CodeIntegrityOptions & 0x02) != 0; // CODEINTEGRITY_OPTION_TESTSIGN
+        }
+        catch { /* fall through to bcdedit */ }
+
         var outp = RunCapture("bcdedit.exe", "/enum {current}");
         if (string.IsNullOrEmpty(outp)) return null;
-        if (outp.IndexOf("denied", StringComparison.OrdinalIgnoreCase) >= 0 ||
-            outp.IndexOf("Access is", StringComparison.OrdinalIgnoreCase) >= 0)
-            return null;
+        if (outp.IndexOf("denied", StringComparison.OrdinalIgnoreCase) >= 0) return null;
         var m = Regex.Match(outp, @"testsigning\s+(Yes|No|On|Off)", RegexOptions.IgnoreCase);
-        if (!m.Success) return null; // can't read reliably (non-elevated/localized) -> "unknown"
+        if (!m.Success) return null;
         var v = m.Groups[1].Value.ToLowerInvariant();
         return v == "yes" || v == "on";
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SYSTEM_CODEINTEGRITY_INFORMATION
+    {
+        public uint Length;
+        public uint CodeIntegrityOptions;
+    }
+
+    [DllImport("ntdll.dll")]
+    private static extern int NtQuerySystemInformation(
+        int systemInformationClass, ref SYSTEM_CODEINTEGRITY_INFORMATION info, int length, out int returnLength);
 
     // Install the driver only if it is missing or older than the bundled package.
     public static async Task<DriverInstallResult> EnsureInstalledAsync(Action<string>? log = null)
