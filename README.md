@@ -1,4 +1,6 @@
-# SecondScreen Local
+# HP ke Monitor
+
+*by PT Teleraya Digital Group — company.teleraya.com*
 
 Turn an Android phone/tablet into a **real secondary display** for a Windows PC — fully
 offline (no cloud, no internet dependency for the app itself).

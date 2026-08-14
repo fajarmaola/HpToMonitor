@@ -62,8 +62,8 @@ UMDriverCopy = 12,UMDF ; copy to drivers\umdf
 SecondScreenDisplay.dll
 
 [Strings]
-ManufacturerName = "SecondScreen Local"
-DeviceName       = "SecondScreen Local Virtual Display"
-DiskName         = "SecondScreen Local Installation Disk"
+ManufacturerName = "PT Teleraya Digital Group"
+DeviceName       = "HP ke Monitor — Layar Virtual"
+DiskName         = "HP ke Monitor — Media Instalasi"
 REG_MULTI_SZ     = 0x00010000
 REG_SZ           = 0x00000000

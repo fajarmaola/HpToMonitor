@@ -116,3 +116,27 @@ created (per the user's explicit engineering rule).
 - VERIFICATION: cannot be tested in this Linux container (no Windows runtime). Requires: Save to
   GitHub -> CI (windows-driver job) rebuild -> install signed driver on Windows PC -> Device Manager
   status OK. Automated web testing agents are N/A for a native UMDF display driver.
+
+## Rebrand + One-step installer (this session)
+- REBRAND to "HP ke Monitor" by PT Teleraya Digital Group (company.teleraya.com). Only USER-FACING
+  strings + icons changed; internal namespaces (SecondScreen.*), Android package (com.secondscreen.local),
+  INF filename, hardware id (Root\SecondScreenDisplay), service name kept to avoid breaking CI/build.
+  * Android: strings.xml app_name, MainActivity/MonitorActivity/MonitorService UI -> Indonesian,
+    manifest label -> @string/app_name + roundIcon.
+  * WPF: MainWindow.xaml (title/header/labels/buttons/footer), MainWindow.xaml.cs (badges/messageboxes),
+    Driver.cpp endpoint names, INF [Strings], SwDevice.cpp device description, installer .iss
+    (AppName/Publisher/URL/group/OutputBaseFilename=HPkeMonitor-Setup), README + PANDUAN.
+  * ICONS: scripts/gen_icons.py (PIL) -> windows/SecondScreen.Desktop/appicon.ico (multi-size, wired via
+    <ApplicationIcon>), android mipmap-*/ic_launcher(.round).png, new adaptive foreground vector
+    (phone -> arrow -> monitor, green #2ED47A on #0E1116). Preview: artifacts/app_icon_512.png.
+- ONE-STEP INSTALL (no manual PowerShell): new Core/VirtualDisplay/DriverInstaller.cs.
+  * GetInstalledVersion() parses `pnputil /enum-drivers` label-agnostically (works on ID Windows).
+  * EnsureInstalledAsync(): compares bundled INF DriverVer vs installed -> SKIP if >=, else installs via
+    elevated `pnputil /add-driver <inf> /install` (single UAC prompt, ExitCode 0/3010=ok/reboot).
+  * EnableTestSigningAsync()/UninstallAsync() elevated helpers. app.manifest stays asInvoker (elevation
+    per-action via Verb=runas) so SendInput still works.
+  * MainWindow: Loaded shows driver status; "Pasang & Mulai" runs EnsureInstalled -> on failure offers
+    YES(enable test-signing)/NO(fallback primary capture)/CANCEL. Desktop.csproj bundles built driver to
+    output "driver\" (also SSL_DRIVER_DIR) so DriverInstaller.FindInfPath finds it next to the exe.
+- VERIFICATION: cannot build/run in Linux container (no .NET/Android/Windows runtime). Verify via
+  Save to GitHub -> CI build -> run .exe (Pasang & Mulai) + install APK on device.

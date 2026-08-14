@@ -1,3 +1,6 @@
 <resources>
-    <string name="app_name">SecondScreen Local</string>
+    <string name="app_name">HP ke Monitor</string>
+    <string name="company_name">PT Teleraya Digital Group</string>
+    <string name="company_url">company.teleraya.com</string>
+    <string name="app_tagline">Penerima • layar kedua offline</string>
 </resources>

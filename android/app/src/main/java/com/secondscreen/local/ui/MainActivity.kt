@@ -68,9 +68,9 @@ class MainActivity : ComponentActivity() {
 
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().padding(24.dp)) {
-                Text("SECOND SCREEN LOCAL", fontSize = 22.sp, fontWeight = FontWeight.Bold,
+                Text("HP KE MONITOR", fontSize = 22.sp, fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground)
-                Text("Receiver • offline extended display", fontSize = 13.sp,
+                Text("Penerima • layar kedua offline", fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
 
                 Spacer(Modifier.height(20.dp))
@@ -89,10 +89,10 @@ class MainActivity : ComponentActivity() {
                     },
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
-                ) { Text(if (searching) "Searching for PC…" else "Search for PCs") }
+                ) { Text(if (searching) "Mencari PC…" else "Cari PC") }
 
                 Spacer(Modifier.height(16.dp))
-                Text("AVAILABLE PCs", fontSize = 11.sp,
+                Text("PC TERSEDIA", fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                 Spacer(Modifier.height(8.dp))
 
@@ -102,7 +102,7 @@ class MainActivity : ComponentActivity() {
                     }
                     if (hosts.isEmpty() && !searching) {
                         item {
-                            Text("No PCs found yet. Make sure the Windows app is running on the same Wi-Fi and tap Search.",
+                            Text("Belum ada PC ditemukan. Pastikan aplikasi Windows berjalan di Wi-Fi yang sama, lalu tekan Cari.",
                                 fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                                 modifier = Modifier.padding(top = 12.dp))
@@ -114,16 +114,22 @@ class MainActivity : ComponentActivity() {
                     Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp,
                         modifier = Modifier.padding(top = 8.dp))
                 }
+
+                Text("PT Teleraya Digital Group • company.teleraya.com",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                    modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             }
         }
 
         if (needPin) {
             AlertDialog(
                 onDismissRequest = { },
-                title = { Text("Enter pairing code") },
+                title = { Text("Masukkan kode sambungan") },
                 text = {
                     Column {
-                        Text("Type the 6-digit code shown on the Windows app.")
+                        Text("Ketik kode 6 digit yang muncul di aplikasi Windows.")
                         Spacer(Modifier.height(12.dp))
                         OutlinedTextField(
                             value = pinInput,
@@ -138,10 +144,10 @@ class MainActivity : ComponentActivity() {
                     TextButton(
                         onClick = { connection.submitPin(pinInput); pinInput = "" },
                         enabled = pinInput.length == 6
-                    ) { Text("Connect") }
+                    ) { Text("Sambung") }
                 },
                 dismissButton = {
-                    TextButton(onClick = { connection.disconnect() }) { Text("Cancel") }
+                    TextButton(onClick = { connection.disconnect() }) { Text("Batal") }
                 }
             )
         }
@@ -150,14 +156,14 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun StatusPill(state: ClientState) {
         val label = when (state) {
-            ClientState.Idle -> "READY"
-            ClientState.Discovering -> "SEARCHING"
-            ClientState.Connecting -> "CONNECTING"
+            ClientState.Idle -> "SIAP"
+            ClientState.Discovering -> "MENCARI"
+            ClientState.Connecting -> "MENYAMBUNG"
             ClientState.Pairing, ClientState.AwaitingPin -> "PAIRING"
-            ClientState.Configuring -> "CONFIGURING"
-            ClientState.Streaming -> "CONNECTED"
-            ClientState.Reconnecting -> "RECONNECTING"
-            ClientState.Disconnected -> "DISCONNECTED"
+            ClientState.Configuring -> "MENYIAPKAN"
+            ClientState.Streaming -> "TERSAMBUNG"
+            ClientState.Reconnecting -> "MENYAMBUNG ULANG"
+            ClientState.Disconnected -> "TERPUTUS"
             ClientState.Error -> "ERROR"
         }
         Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(20.dp)) {
@@ -182,7 +188,7 @@ class MainActivity : ComponentActivity() {
                     Text(host.ip, fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                 }
-                Button(onClick = onConnect, shape = RoundedCornerShape(10.dp)) { Text("Connect") }
+                Button(onClick = onConnect, shape = RoundedCornerShape(10.dp)) { Text("Sambung") }
             }
         }
     }

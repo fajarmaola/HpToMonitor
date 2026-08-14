@@ -13,6 +13,19 @@ public partial class MainWindow : Window
         InitializeComponent();
         Log.OnLog += (_, e) => Dispatcher.Invoke(() =>
             LogText.Text = $"[{e.level}] {e.message}");
+        Loaded += async (_, _) => await RefreshDriverStatusAsync();
+    }
+
+    private async Task RefreshDriverStatusAsync()
+    {
+        DriverStatusText.Text = "Driver Layar 2: memeriksa…";
+        var installed = await Task.Run(() => DriverInstaller.GetInstalledVersion());
+        Dispatcher.Invoke(() =>
+        {
+            DriverStatusText.Text = installed != null
+                ? $"Driver Layar 2: terpasang (v{installed}) ✓"
+                : "Driver Layar 2: belum terpasang — akan dipasang otomatis saat Mulai";
+        });
     }
 
     private QualityMode SelectedQuality() => QualityCombo.SelectedIndex switch
@@ -24,11 +37,53 @@ public partial class MainWindow : Window
 
     private async void StartButton_Click(object sender, RoutedEventArgs e)
     {
+        StartButton.IsEnabled = false;
+        bool useVirtualDisplay = VirtualDisplayCheck.IsChecked == true;
+
+        // --- Step 1: one-step driver setup (check → skip if present → auto-install). ---------
+        if (useVirtualDisplay)
+        {
+            SetBadge("MENYIAPKAN", (Brush)FindResource("Warn"));
+            var driver = await DriverInstaller.EnsureInstalledAsync(
+                m => Dispatcher.Invoke(() => LogText.Text = m));
+            await RefreshDriverStatusAsync();
+
+            if (!driver.Success)
+            {
+                var choice = MessageBox.Show(this,
+                    driver.Message +
+                    "\n\nYA = aktifkan Test Signing sekarang (perlu 1x restart Windows)." +
+                    "\nTIDAK = lanjut tanpa Layar 2 virtual (tangkap layar utama PC)." +
+                    "\nBATAL = berhenti.",
+                    "HP ke Monitor — Driver", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
+
+                if (choice == MessageBoxResult.Cancel) { ResetUi(); return; }
+                if (choice == MessageBoxResult.Yes)
+                {
+                    var ts = await DriverInstaller.EnableTestSigningAsync(
+                        m => Dispatcher.Invoke(() => LogText.Text = m));
+                    MessageBox.Show(this, ts.Message, "HP ke Monitor",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                    ResetUi();
+                    return; // user restarts, then presses Mulai again
+                }
+                useVirtualDisplay = false; // No -> fall back to primary capture
+            }
+            else if (driver.RebootRequired)
+            {
+                MessageBox.Show(this,
+                    "Driver terpasang. Sebaiknya restart Windows agar Layar 2 aktif penuh, " +
+                    "lalu buka lagi dan tekan Mulai.",
+                    "HP ke Monitor", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+
+        // --- Step 2: start hosting with the chosen configuration. ----------------------------
         var opts = new SessionOptions
         {
             HostName = Environment.MachineName,
             Quality = SelectedQuality(),
-            UseVirtualDisplay = VirtualDisplayCheck.IsChecked == true,
+            UseVirtualDisplay = useVirtualDisplay,
             EncryptVideo = EncryptVideoCheck.IsChecked == true,
             UseHardwareEncoder = HwEncodeCheck.IsChecked == true
         };
@@ -37,17 +92,16 @@ public partial class MainWindow : Window
         _session.StateChanged += (_, s) => Dispatcher.Invoke(() => OnState(s));
         _session.PinReady += (_, pin) => Dispatcher.Invoke(() => ShowPin(pin));
         _session.Error += (_, msg) => Dispatcher.Invoke(() =>
-            MessageBox.Show(this, msg, "SecondScreen Local", MessageBoxButton.OK, MessageBoxImage.Warning));
+            MessageBox.Show(this, msg, "HP ke Monitor", MessageBoxButton.OK, MessageBoxImage.Warning));
         _session.Diagnostics.Updated += (_, _) => Dispatcher.Invoke(UpdateDiagnostics);
 
-        StartButton.IsEnabled = false;
         DisconnectButton.IsEnabled = true;
-        SetBadge("WAITING", (Brush)FindResource("Warn"));
+        SetBadge("MENUNGGU", (Brush)FindResource("Warn"));
 
         try { await _session.StartAsync(); }
         catch (Exception ex)
         {
-            MessageBox.Show(this, $"Failed to start hosting: {ex.Message}", "Error");
+            MessageBox.Show(this, $"Gagal memulai: {ex.Message}", "HP ke Monitor");
             ResetUi();
         }
     }
@@ -71,16 +125,16 @@ public partial class MainWindow : Window
     {
         switch (s)
         {
-            case SessionState.Discovering: SetBadge("SEARCHING", (Brush)FindResource("Warn")); break;
+            case SessionState.Discovering: SetBadge("MENCARI", (Brush)FindResource("Warn")); break;
             case SessionState.Connecting:
-            case SessionState.Configuring: SetBadge("CONNECTING", (Brush)FindResource("Warn")); break;
+            case SessionState.Configuring: SetBadge("MENYAMBUNG", (Brush)FindResource("Warn")); break;
             case SessionState.Pairing: SetBadge("PAIRING", (Brush)FindResource("Warn")); break;
             case SessionState.Streaming:
-                SetBadge("CONNECTED", (Brush)FindResource("Accent"));
+                SetBadge("TERSAMBUNG", (Brush)FindResource("Accent"));
                 PinCard.Visibility = Visibility.Collapsed;
                 DeviceNameText.Text = _session?.PeerDevice.Name ?? "Android";
                 break;
-            case SessionState.Reconnecting: SetBadge("RECONNECTING", (Brush)FindResource("Warn")); break;
+            case SessionState.Reconnecting: SetBadge("MENYAMBUNG ULANG", (Brush)FindResource("Warn")); break;
             case SessionState.Disconnected:
             case SessionState.Idle: ResetUi(); break;
         }
@@ -90,13 +144,13 @@ public partial class MainWindow : Window
     {
         PinCard.Visibility = Visibility.Visible;
         PinText.Text = $"{pin[..3]}   {pin[3..]}";
-        PinPromptText.Text = $"\"{_session?.PeerDevice.Name}\" wants to connect. Enter this code on Android:";
+        PinPromptText.Text = $"\"{_session?.PeerDevice.Name}\" ingin terhubung. Masukkan kode ini di Android:";
         DeviceNameText.Text = _session?.PeerDevice.Name ?? "Android";
         Activate();
         // Also show the PIN in a popup so it is always visible (never clipped by the window).
         MessageBox.Show(this,
-            $"Pairing code for \"{_session?.PeerDevice.Name ?? "Android"}\":\n\n        {pin[..3]}  {pin[3..]}\n\nEnter this 6-digit code in the SecondScreen app on your Android device.",
-            "SecondScreen — Pairing Code", MessageBoxButton.OK, MessageBoxImage.Information);
+            $"Kode sambungan untuk \"{_session?.PeerDevice.Name ?? "Android"}\":\n\n        {pin[..3]}  {pin[3..]}\n\nMasukkan kode 6 digit ini di aplikasi HP ke Monitor pada perangkat Android kamu.",
+            "HP ke Monitor — Kode Sambungan", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private void UpdateDiagnostics()
@@ -121,7 +175,7 @@ public partial class MainWindow : Window
         StartButton.IsEnabled = true;
         DisconnectButton.IsEnabled = false;
         PinCard.Visibility = Visibility.Collapsed;
-        SetBadge("DISCONNECTED", (Brush)FindResource("FgMuted"));
+        SetBadge("TERPUTUS", (Brush)FindResource("FgMuted"));
         DeviceNameText.Text = "—";
         ConnText.Text = ResText.Text = FpsText.Text = LatencyText.Text = BitrateText.Text = "—";
     }

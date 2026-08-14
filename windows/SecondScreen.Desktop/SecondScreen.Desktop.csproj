@@ -9,11 +9,28 @@
     <RootNamespace>SecondScreen.Desktop</RootNamespace>
     <AssemblyName>SecondScreenLocal</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>appicon.ico</ApplicationIcon>
     <Platforms>AnyCPU;x64</Platforms>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\SecondScreen.Core\SecondScreen.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Bundle the built driver package next to the exe under "driver\" so the app can install it
+       in one step (DriverInstaller). Build the driver first (or set SSL_DRIVER_DIR). Silently
+       skipped when the package isn't present (e.g. Core-only dev builds). -->
+  <ItemGroup>
+    <None Include="..\SecondScreen.DisplayDriver\x64\Release\SecondScreenDisplay\**\*"
+          Condition="Exists('..\SecondScreen.DisplayDriver\x64\Release\SecondScreenDisplay')">
+      <Link>driver\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="$(SSL_DRIVER_DIR)\**\*"
+          Condition="'$(SSL_DRIVER_DIR)' != '' And Exists('$(SSL_DRIVER_DIR)')">
+      <Link>driver\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <!-- Copy the native DLL next to the exe. Build SecondScreen.Native first (docs/BUILD_WINDOWS.md).

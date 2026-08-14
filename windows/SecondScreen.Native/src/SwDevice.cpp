@@ -58,7 +58,7 @@ SSL_API int SSL_CALL SslCreateVirtualDisplay(int width, int height, int refreshH
     info.pContainerId = nullptr;
     info.CapabilityFlags = SWDeviceCapabilitiesRemovable | SWDeviceCapabilitiesSilentInstall |
                            SWDeviceCapabilitiesDriverRequired;
-    info.pszDeviceDescription = L"SecondScreen Local Virtual Display";
+    info.pszDeviceDescription = L"HP ke Monitor Virtual Display";
 
     HRESULT hr = g_pSwDeviceCreate(
         L"SecondScreenDisplay",

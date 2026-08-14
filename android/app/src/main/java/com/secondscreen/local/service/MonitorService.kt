@@ -35,15 +35,15 @@ class MonitorService : Service() {
             val nm = getSystemService(NotificationManager::class.java)
             if (nm.getNotificationChannel(channelId) == null) {
                 nm.createNotificationChannel(
-                    NotificationChannel(channelId, "Monitor Mode", NotificationManager.IMPORTANCE_LOW)
+                    NotificationChannel(channelId, "Mode Monitor", NotificationManager.IMPORTANCE_LOW)
                 )
             }
         }
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
             Notification.Builder(this, channelId) else @Suppress("DEPRECATION") Notification.Builder(this)
         return builder
-            .setContentTitle("SecondScreen Local")
-            .setContentText("Acting as a second display")
+            .setContentTitle("HP ke Monitor")
+            .setContentText("Sedang menjadi layar kedua")
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth) // placeholder system icon
             .setOngoing(true)
             .build()

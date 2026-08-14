@@ -49,7 +49,7 @@ class MonitorActivity : ComponentActivity() {
             setBackgroundColor(Color.parseColor("#99000000"))
             textSize = 12f
             setPadding(20, 16, 20, 16)
-            text = "Connecting…"
+            text = "Menyambung…"
         }
         root.addView(overlay, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
@@ -57,7 +57,7 @@ class MonitorActivity : ComponentActivity() {
         })
 
         val toggle = Button(this).apply {
-            text = "Stats"
+            text = "Statistik"
             alpha = 0.4f
             setOnClickListener { toggleOverlay() }
         }
@@ -119,11 +119,11 @@ class MonitorActivity : ComponentActivity() {
                 val lat = connection.latencyMs.value
                 overlay.text = buildString {
                     append("FPS: ${"%.0f".format(fps)}\n")
-                    append("Latency: ${"%.0f".format(lat)} ms\n")
+                    append("Latensi: ${"%.0f".format(lat)} ms\n")
                     append("Codec: ${config.codec.uppercase()}\n")
-                    append("Resolution: ${config.width}x${config.height}\n")
-                    append("Dropped: $dropped\n")
-                    append("Encrypted: ${if (config.encryptVideo) "yes" else "no"}")
+                    append("Resolusi: ${config.width}x${config.height}\n")
+                    append("Frame drop: $dropped\n")
+                    append("Terenkripsi: ${if (config.encryptVideo) "ya" else "tidak"}")
                 }
                 ui.postDelayed(this, 1000)
             }
