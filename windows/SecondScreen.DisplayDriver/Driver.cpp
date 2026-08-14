@@ -127,10 +127,8 @@ void SwapChainProcessor::RunCore() {
         if (SUCCEEDED(buffer.MetaData.pSurface->QueryInterface(IID_PPV_ARGS(&frame))))
             ProcessFrame(frame);
 
-        // Signal we finished with this buffer.
-        IDARG_IN_FINISHEDPROCESSINGFRAME finish = {};
-        finish.hBuffer = buffer.MetaData.hBuffer;
-        IddCxSwapChainFinishedProcessingFrame(m_swapChain, &finish);
+        // Signal we finished with this buffer (current IddCx API takes only the swap chain).
+        IddCxSwapChainFinishedProcessingFrame(m_swapChain);
 
         if (WaitForSingleObject(m_terminate.Get(), 0) == WAIT_OBJECT_0) break;
     }
@@ -260,7 +258,7 @@ NTSTATUS EvtIddCxAdapterInitFinished(IDDCX_ADAPTER adapter, const IDARG_IN_ADAPT
     NTSTATUS status = IddCxMonitorCreate(adapter, &in, &out);
     if (!NT_SUCCESS(status)) return status;
 
-    IDARG_IN_MONITORARRIVAL arrival = {};
+    IDARG_OUT_MONITORARRIVAL arrival = {};
     status = IddCxMonitorArrival(out.MonitorObject, &arrival);
     UNREFERENCED_PARAMETER(ctx);
     return status;
