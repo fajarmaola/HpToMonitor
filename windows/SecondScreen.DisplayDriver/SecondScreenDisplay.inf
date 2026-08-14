@@ -51,9 +51,9 @@ UmdfServiceOrder           = SecondScreenDisplay
 UmdfKernelModeClientPolicy = AllowKernelModeClients
 
 [SecondScreenDisplay_UmdfInstall]
-UmdfLibraryVersion = $UMDFVERSION$
+UmdfLibraryVersion = 2.25.0
 ServiceBinary      = %12%\UMDF\SecondScreenDisplay.dll
-UmdfExtensions     = IddCx0102
+UmdfExtensions     = IddCx0104
 
 [DestinationDirs]
 UMDriverCopy = 12,UMDF ; copy to drivers\umdf
