@@ -1,0 +1,131 @@
+name: Release
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+
+# Builds the single Windows installer + the Android APK, then publishes them to a moving "latest"
+# GitHub Release (with a version.json) so the apps can auto-update. Version = <VERSION file>.<run>.
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Windows installer (app + driver)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Set up NuGet
+        uses: NuGet/setup-nuget@v2
+      - name: Build native DLL
+        run: |
+          cmake -S windows/SecondScreen.Native -B windows/SecondScreen.Native/build -A x64
+          cmake --build windows/SecondScreen.Native/build --config Release
+          if (!(Test-Path windows/SecondScreen.Native/build/Release/SecondScreen.Native.dll)) { throw "Native DLL not produced" }
+      - name: C# tests
+        run: dotnet test windows/SecondScreen.Tests/SecondScreen.Tests.csproj -c Release
+      - name: Restore WDK NuGet
+        working-directory: windows/SecondScreen.DisplayDriver
+        run: nuget restore packages.config -PackagesDirectory packages -Source https://api.nuget.org/v3/index.json
+      - name: Build IddCx driver (x64/Release)
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VSPATH=%%i
+          call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat"
+          msbuild windows\SecondScreen.DisplayDriver\SecondScreen.DisplayDriver.vcxproj /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off /v:normal
+          if not exist "windows\SecondScreen.DisplayDriver\x64\Release\SecondScreenDisplay\SecondScreenDisplay.dll" (echo DRIVER_COMPILE_FAILED & exit /b 1)
+          echo DRIVER_COMPILE_SUCCESS
+      - name: Publish EXE + stage driver + build installer
+        shell: pwsh
+        env:
+          SSL_NATIVE_DLL: ${{ github.workspace }}\windows\SecondScreen.Native\build\Release\SecondScreen.Native.dll
+        run: |
+          $ver = "$(Get-Content VERSION).$env:GITHUB_RUN_NUMBER"
+          Write-Host "Version = $ver"
+          dotnet publish windows/SecondScreen.Desktop/SecondScreen.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:Version=$ver -p:FileVersion=$ver -p:AssemblyVersion=$ver -o publish
+          copy windows\SecondScreen.Native\build\Release\SecondScreen.Native.dll publish\
+          New-Item -ItemType Directory -Force publish\driver | Out-Null
+          Copy-Item -Recurse -Force windows\SecondScreen.DisplayDriver\x64\Release\SecondScreenDisplay\* publish\driver\
+          choco install innosetup --no-progress -y
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          & "$iscc" "/DAppVersion=$ver" "/DAppDir=$env:GITHUB_WORKSPACE\publish" "/DDriverDir=$env:GITHUB_WORKSPACE\publish\driver" windows\installer\SecondScreenLocal.iss
+          if (!(Test-Path windows\installer\Output\HPkeMonitor-Setup.exe)) { throw "installer not produced" }
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HPkeMonitor-Setup
+          path: windows/installer/Output/HPkeMonitor-Setup.exe
+          if-no-files-found: error
+
+  android:
+    name: Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Set up Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Install SDK packages
+        run: yes | sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+      - name: Build debug APK (versioned)
+        working-directory: android
+        run: |
+          VER="$(cat ../VERSION).${GITHUB_RUN_NUMBER}"
+          echo "Version = $VER"
+          gradle :app:testDebugUnitTest :app:assembleDebug -PversionName="$VER" -PversionCode="${GITHUB_RUN_NUMBER}" --stacktrace
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SecondScreenLocal-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release (auto-update feed)
+    needs: [windows, android]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download installer
+        uses: actions/download-artifact@v4
+        with:
+          name: HPkeMonitor-Setup
+          path: dist
+      - name: Download APK
+        uses: actions/download-artifact@v4
+        with:
+          name: SecondScreenLocal-apk
+          path: dist
+      - name: Compose version.json
+        run: |
+          VER="$(cat VERSION).${GITHUB_RUN_NUMBER}"
+          echo "VER=$VER" >> $GITHUB_ENV
+          printf '{"version":"%s","notes":"Pembaruan otomatis dari commit %s","exe":"HPkeMonitor-Setup.exe","apk":"app-debug.apk"}\n' "$VER" "${GITHUB_SHA::7}" > dist/version.json
+          ls -la dist
+      - name: Publish moving "latest" release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          target_commitish: ${{ github.sha }}
+          name: HP ke Monitor ${{ env.VER }}
+          body: "Rilis otomatis versi ${{ env.VER }}. Berisi installer Windows (app + driver) dan APK Android."
+          make_latest: true
+          files: |
+            dist/HPkeMonitor-Setup.exe
+            dist/app-debug.apk
+            dist/version.json

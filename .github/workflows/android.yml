@@ -1,8 +1,8 @@
 name: Android
 
+# Superseded by release.yml (builds the APK and publishes releases on push).
+# Kept for manual runs only to avoid duplicate builds.
 on:
-  push:
-  pull_request:
   workflow_dispatch:
 
 jobs:

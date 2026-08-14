@@ -65,6 +65,22 @@ class MainActivity : ComponentActivity() {
 
         var pinInput by remember { mutableStateOf("") }
 
+        // --- In-app update (GitHub Releases) ---
+        val ctx = LocalContext.current
+        var updBusy by remember { mutableStateOf(false) }
+        var updInfo by remember { mutableStateOf<ReleaseInfo?>(null) }
+        fun checkUpdate() {
+            scope.launch {
+                updBusy = true
+                val info = Updater.check(BuildConfig.VERSION_NAME)
+                updBusy = false
+                if (info.available) updInfo = info
+                else Toast.makeText(ctx,
+                    if (info.message.isNotEmpty()) info.message else I18n.t("upd.uptodate"),
+                    Toast.LENGTH_LONG).show()
+            }
+        }
+
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             if (state == ClientState.Streaming) {
                 ConnectedInstructions(onStart = {
@@ -85,6 +101,11 @@ class MainActivity : ComponentActivity() {
                             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)) {
                             Text(I18n.toggleLabel(), fontWeight = FontWeight.SemiBold)
                         }
+                    }
+
+                    TextButton(onClick = { checkUpdate() }, enabled = !updBusy) {
+                        Text(if (updBusy) I18n.t("upd.checking") else I18n.t("btn.update"),
+                            fontSize = 12.sp)
                     }
 
                     Spacer(Modifier.height(20.dp))
@@ -160,6 +181,39 @@ class MainActivity : ComponentActivity() {
                 },
                 dismissButton = {
                     TextButton(onClick = { connection.disconnect() }) { Text(I18n.t("btn.cancel")) }
+                }
+            )
+        }
+
+        updInfo?.let { info ->
+            AlertDialog(
+                onDismissRequest = { updInfo = null },
+                title = { Text(I18n.t("upd.available")) },
+                text = {
+                    Column {
+                        Text("v${info.latestVersion}  (${I18n.t("state.ready")}: v${info.currentVersion})")
+                        if (info.notes.isNotEmpty()) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(info.notes, fontSize = 13.sp)
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val url = info.apkUrl
+                        updInfo = null
+                        if (url != null) scope.launch {
+                            updBusy = true
+                            Toast.makeText(ctx, I18n.t("upd.downloading"), Toast.LENGTH_SHORT).show()
+                            val f = Updater.download(ctx, url)
+                            updBusy = false
+                            if (f != null) Updater.install(ctx, f)
+                            else Toast.makeText(ctx, I18n.t("upd.failed"), Toast.LENGTH_LONG).show()
+                        }
+                    }) { Text(I18n.t("upd.now")) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { updInfo = null }) { Text(I18n.t("upd.later")) }
                 }
             )
         }

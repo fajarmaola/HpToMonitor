@@ -52,6 +52,13 @@ public static class Loc
         ["badge.reconnecting"] = ("MENYAMBUNG ULANG", "RECONNECTING"),
         ["pin.title"] = ("HP ke Monitor — Kode Sambungan", "HP ke Monitor — Pairing Code"),
         ["start.fail"] = ("Gagal memulai", "Failed to start"),
+        ["btn.update"] = ("Cek Pembaruan", "Check for updates"),
+        ["upd.title"] = ("HP ke Monitor — Pembaruan", "HP ke Monitor — Update"),
+        ["upd.checking"] = ("Memeriksa pembaruan…", "Checking for updates…"),
+        ["upd.uptodate"] = ("Aplikasi sudah versi terbaru.", "You're on the latest version."),
+        ["upd.available"] = ("Pembaruan tersedia — perbarui sekarang?", "Update available — update now?"),
+        ["upd.downloading"] = ("Mengunduh pembaruan…", "Downloading update…"),
+        ["upd.failed"] = ("Gagal memperbarui. Coba lagi nanti.", "Update failed. Try again later."),
         // Health window
         ["h.title"] = ("Cek Kesehatan", "Health Check"),
         ["h.subtitle"] = ("Status komponen & perbaikan cepat", "Component status & quick fixes"),

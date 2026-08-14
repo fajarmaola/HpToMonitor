@@ -175,3 +175,19 @@ created (per the user's explicit engineering rule).
   GitHub Release (assets: installer .exe + app-debug.apk); app checks api.github.com/releases/latest,
   compares version, downloads asset, runs installer (Win) / package installer (Android). Internet used
   ONLY for update check/download; all config/streaming stays offline/LAN.
+
+## Session: single installer + GitHub auto-update (IMPLEMENTED)
+- Repo for updates: fajarmaola/HpToMonitor (MUST be Public for anonymous update download).
+- Versioning: /app/VERSION (e.g. "1.0") + GITHUB_RUN_NUMBER -> 1.0.<run>, monotonic. Bump VERSION for big versions.
+- CI: NEW .github/workflows/release.yml (jobs: windows installer, android apk, release). release job (push to
+  main/master only) downloads both artifacts, writes version.json, publishes moving "latest" GitHub Release
+  via softprops/action-gh-release (permissions: contents: write). windows.yml/android.yml set to
+  workflow_dispatch-only to avoid duplicate builds. Single installer artifact HPkeMonitor-Setup.exe (Inno).
+- Windows updater: Core/Update/Updater.cs (GitHub /releases/latest -> version.json + .exe asset, compare,
+  download to temp, RunInstaller + Application.Shutdown). MainWindow "Cek Pembaruan" button + Loc keys.
+- Android updater: update/Updater.kt (HttpURLConnection + org.json, /releases/latest -> version.json + .apk,
+  download to cacheDir, FileProvider install intent). Manifest: REQUEST_INSTALL_PACKAGES + FileProvider
+  (${applicationId}.fileprovider) + res/xml/file_paths.xml. build.gradle.kts: versionName/Code from
+  -P props, buildConfig=true. MainActivity "Cek Pembaruan" button + AlertDialog + I18n keys.
+- VERIFY: Save to GitHub (repo Public) -> release.yml builds + publishes "latest" release with the 3 assets
+  -> install app -> "Cek Pembaruan" fetches & updates. Cannot test in Linux container.

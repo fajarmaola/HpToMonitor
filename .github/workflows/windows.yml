@@ -1,8 +1,8 @@
 name: Windows
 
+# Superseded by release.yml (which builds the single installer AND publishes releases on push).
+# Kept for manual runs only to avoid duplicate builds.
 on:
-  push:
-  pull_request:
   workflow_dispatch:
 
 # Single job that builds everything (native DLL, tests, Core/Desktop EXE, IddCx driver) and packages

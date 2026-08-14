@@ -39,6 +39,7 @@ public partial class MainWindow : Window
         DisconnectButton.Content = Loc.T("btn.disconnect");
         DisplaySettingsButton.Content = Loc.T("btn.display");
         HealthButton.Content = Loc.T("btn.health");
+        UpdateButton.Content = Loc.T("btn.update");
         StatusBadge.Text = Loc.T(_badgeKey);
     }
 
@@ -52,6 +53,36 @@ public partial class MainWindow : Window
     {
         var w = new HealthWindow { Owner = this };
         w.ShowDialog();
+    }
+
+    private async void UpdateButton_Click(object sender, RoutedEventArgs e)
+    {
+        UpdateButton.IsEnabled = false;
+        LogText.Text = Loc.T("upd.checking");
+        var info = await Updater.CheckAsync();
+        if (!info.Available)
+        {
+            LogText.Text = string.IsNullOrEmpty(info.Message) ? Loc.T("upd.uptodate") : info.Message;
+            UpdateButton.IsEnabled = true;
+            return;
+        }
+
+        var ask = MessageBox.Show(this,
+            $"{Loc.T("upd.available")}\n\nv{info.CurrentVersion}  →  v{info.LatestVersion}\n\n{info.Notes}",
+            Loc.T("upd.title"), MessageBoxButton.YesNo, MessageBoxImage.Information);
+        if (ask != MessageBoxResult.Yes) { UpdateButton.IsEnabled = true; return; }
+
+        LogText.Text = Loc.T("upd.downloading");
+        var path = await Updater.DownloadInstallerAsync(info.InstallerUrl!, new Progress<double>(p =>
+            Dispatcher.Invoke(() => LogText.Text = $"{Loc.T("upd.downloading")} {p:P0}")));
+        if (path == null)
+        {
+            LogText.Text = Loc.T("upd.failed");
+            UpdateButton.IsEnabled = true;
+            return;
+        }
+        Updater.RunInstaller(path);
+        Application.Current.Shutdown(); // let the installer replace files
     }
 
     private QualityMode SelectedQuality() => QualityCombo.SelectedIndex switch

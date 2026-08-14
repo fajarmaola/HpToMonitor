@@ -64,6 +64,14 @@ object I18n {
         "conn.start" to Pair("Mulai Tampilkan", "Start Display"),
         "mon.connecting" to Pair("Menyambung…", "Connecting…"),
         "mon.stats" to Pair("Statistik", "Stats"),
+        "btn.update" to Pair("Cek Pembaruan", "Check for updates"),
+        "upd.checking" to Pair("Memeriksa pembaruan…", "Checking for updates…"),
+        "upd.uptodate" to Pair("Aplikasi sudah versi terbaru.", "You're on the latest version."),
+        "upd.available" to Pair("Pembaruan tersedia", "Update available"),
+        "upd.now" to Pair("Perbarui Sekarang", "Update now"),
+        "upd.later" to Pair("Nanti", "Later"),
+        "upd.downloading" to Pair("Mengunduh pembaruan…", "Downloading update…"),
+        "upd.failed" to Pair("Gagal memperbarui. Coba lagi nanti.", "Update failed. Try again later."),
         "footer" to Pair("PT Teleraya Digital Group • company.teleraya.com", "PT Teleraya Digital Group • company.teleraya.com")
     )
 }

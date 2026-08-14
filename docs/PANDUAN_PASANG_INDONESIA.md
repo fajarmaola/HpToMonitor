@@ -7,21 +7,16 @@ Panduan super simpel: (A) download file, (B) pasang aplikasi HP (.apk), (C) pasa
 
 ---
 
-## A. Download file dari GitHub Actions
+## A. Download file dari GitHub Releases
 
-Buka: `https://github.com/teleraya-official/SecondScreenLocal/actions`
+Buka halaman **Releases** (bukan Actions): `https://github.com/fajarmaola/HpToMonitor/releases/latest`
 
-### 1. Aplikasi PC (+ driver) — dari workflow "Windows"
-- Klik run **Windows** terbaru yang **HIJAU**.
-- Di bagian **Artifacts**, download:
-  - **`SecondScreenLocal-Windows-x64`** → aplikasi PC (`SecondScreenLocal.exe` + `SecondScreen.Native.dll` + folder `driver`).
-  - (opsional) **`SecondScreenLocal-DisplayDriver`** → paket driver terpisah (`.dll` + `.inf` + `.cat`).
+Di rilis **latest** ada 2 file — cukup itu saja:
+- **`HPkeMonitor-Setup.exe`** → installer PC (sudah termasuk driver Layar 2).
+- **`app-debug.apk`** → aplikasi Android.
 
-### 2. Aplikasi HP / APK — dari workflow "Android"
-- Klik workflow **Android** terbaru yang **HIJAU**.
-- Di bagian **Artifacts**, download **`SecondScreenLocal-apk`** → berisi `app-debug.apk`.
-
-> Artifact berbentuk .zip — ekstrak dulu sebelum dipakai.
+> Tidak perlu ekstrak apa pun. Langsung pakai.
+> (Catatan: agar link download & auto-update bisa diakses publik, repo GitHub harus **Public**.)
 
 ---
 
@@ -66,3 +61,13 @@ dilewati). Setelah restart, buka lagi aplikasi.
   **Cek Kesehatan → Driver Layar 2 → Perbaiki**. Kalau masih, kirim kode error-nya ke tim.
 - **Belum bisa Layar 2** → kamu tetap bisa jalan dengan menangkap **layar utama** (pilih "TIDAK" saat
   ditanya) sambil menyiapkan driver.
+
+---
+
+## D. Auto-update (tanpa download ulang manual)
+Aplikasi tetap **offline** untuk pemakaian normal; internet **hanya** dipakai saat kamu klik **Cek Pembaruan**.
+- **PC:** klik **Cek Pembaruan** → kalau ada versi baru → **YA** → installer terbaru diunduh & dijalankan otomatis.
+- **Android:** tombol **Cek Pembaruan** (pojok atas) → **Perbarui Sekarang** → APK diunduh, lalu Android minta konfirmasi install (izinkan sekali "Install unknown apps").
+
+Sumber pembaruan = **GitHub Releases** `latest` (dibuat otomatis oleh CI tiap ada perubahan di branch utama).
+Versi = isi file `VERSION` (mis. `1.0`) + nomor build. Untuk versi besar, cukup ubah isi `VERSION` jadi `1.1`.
