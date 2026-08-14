@@ -49,7 +49,7 @@ class MonitorActivity : ComponentActivity() {
             setBackgroundColor(Color.parseColor("#99000000"))
             textSize = 12f
             setPadding(20, 16, 20, 16)
-            text = "Menyambung…"
+            text = I18n.t("mon.connecting")
         }
         root.addView(overlay, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
@@ -57,7 +57,7 @@ class MonitorActivity : ComponentActivity() {
         })
 
         val toggle = Button(this).apply {
-            text = "Statistik"
+            text = I18n.t("mon.stats")
             alpha = 0.4f
             setOnClickListener { toggleOverlay() }
         }

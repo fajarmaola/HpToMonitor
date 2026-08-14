@@ -140,3 +140,28 @@ created (per the user's explicit engineering rule).
     output "driver\" (also SSL_DRIVER_DIR) so DriverInstaller.FindInfPath finds it next to the exe.
 - VERIFICATION: cannot build/run in Linux container (no .NET/Android/Windows runtime). Verify via
   Save to GitHub -> CI build -> run .exe (Pasang & Mulai) + install APK on device.
+
+## Session: Language toggle + Health panel + Clean uninstall + Splash + modern UI + Android connect screen
+- USER DECISIONS: driver check/install ONLY in installer (NOT auto in app); default language Indonesian
+  (toggle ID/EN persisted); keep dark+green but modern; Android success/instruction screen designer's choice.
+- WINDOWS (WPF, SecondScreen.Desktop):
+  * Localization.cs (Loc, AppLang, runtime dict ID/EN, T(key)) + AppSettings.cs (persist lang in
+    %AppData%\HPkeMonitor\settings.json). MainWindow builds strings via ApplyLanguage()+Loc.Changed;
+    header EN/ID chip (LangButton). Default ID.
+  * Start flow no longer installs driver; button renamed to "Mulai". Driver install lives in the installer
+    (.iss installdriver task, checked by default). App shows a neutral hint only (no pnputil on launch).
+  * HealthWindow.xaml(.cs) "Cek Kesehatan": rows Driver / Test Signing / Network with status + manual
+    Fix/Enable/Open buttons + Clean-uninstall (UninstallAsync + VirtualDisplayController.Remove, confirm).
+    DriverInstaller.IsTestSigningOn() added (best-effort bcdedit, null=unknown).
+  * SplashWindow.xaml(.cs) ~1.6s branded splash; App.xaml.cs OnStartup shows splash->main (removed
+    StartupUri). Modern App.xaml: WindowBg/CardGrad/AccentGrad gradients, CardStyle w/ DropShadow,
+    gradient Primary button, Chip style. assets/logo.png (scripts/gen_splash.py) as <Resource>.
+- ANDROID (Compose):
+  * ui/I18n.kt (object, SharedPreferences "hpkemonitor", default ID, Compose mutableState -> recompose on
+    toggle). MainActivity: header EN/ID OutlinedButton, all strings via I18n.t, footer.
+  * Removed auto-launch of MonitorActivity; on Streaming shows ConnectedInstructions (check badge, title,
+    3 numbered StepCards, big "Mulai Tampilkan" -> starts MonitorActivity). Modern rounded cards.
+  * MonitorActivity connecting/stats strings via I18n.t.
+- VERIFY (cannot build/run in Linux container): Save to GitHub -> CI build .exe/.apk -> installer installs
+  driver at setup -> app: language toggle, Cek Kesehatan fixes, splash, Android connect screen. Windows
+  UMDF driver + streaming still need real hardware.

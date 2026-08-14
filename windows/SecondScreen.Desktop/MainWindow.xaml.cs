@@ -7,25 +7,51 @@ namespace SecondScreen.Desktop;
 public partial class MainWindow : Window
 {
     private SessionManager? _session;
+    private string _badgeKey = "badge.disconnected";
 
     public MainWindow()
     {
         InitializeComponent();
         Log.OnLog += (_, e) => Dispatcher.Invoke(() =>
             LogText.Text = $"[{e.level}] {e.message}");
-        Loaded += async (_, _) => await RefreshDriverStatusAsync();
+        Loc.Changed += ApplyLanguage;
+        ApplyLanguage();
     }
 
-    private async Task RefreshDriverStatusAsync()
+    // ---- Localization ---------------------------------------------------------------------
+    private void ApplyLanguage()
     {
-        DriverStatusText.Text = "Driver Layar 2: memeriksa…";
-        var installed = await Task.Run(() => DriverInstaller.GetInstalledVersion());
-        Dispatcher.Invoke(() =>
-        {
-            DriverStatusText.Text = installed != null
-                ? $"Driver Layar 2: terpasang (v{installed}) ✓"
-                : "Driver Layar 2: belum terpasang — akan dipasang otomatis saat Mulai";
-        });
+        LangButton.Content = Loc.ToggleLabel();
+        TaglineText.Text = Loc.T("tagline");
+        LblDevice.Text = Loc.T("lbl.device");
+        LblConn.Text = Loc.T("lbl.connection");
+        LblRes.Text = Loc.T("lbl.resolution");
+        LblLatency.Text = Loc.T("lbl.latency");
+        LblPerf.Text = Loc.T("lbl.performance");
+        Qi0.Content = Loc.T("q.performance");
+        Qi1.Content = Loc.T("q.balanced");
+        Qi2.Content = Loc.T("q.high");
+        VirtualDisplayCheck.Content = Loc.T("chk.vd");
+        EncryptVideoCheck.Content = Loc.T("chk.enc");
+        HwEncodeCheck.Content = Loc.T("chk.hw");
+        DriverHintText.Text = Loc.T("driver.hint");
+        StartButton.Content = Loc.T("btn.start");
+        DisconnectButton.Content = Loc.T("btn.disconnect");
+        DisplaySettingsButton.Content = Loc.T("btn.display");
+        HealthButton.Content = Loc.T("btn.health");
+        StatusBadge.Text = Loc.T(_badgeKey);
+    }
+
+    private void LangButton_Click(object sender, RoutedEventArgs e)
+    {
+        Loc.ToggleLang();
+        AppSettings.Save();
+    }
+
+    private void HealthButton_Click(object sender, RoutedEventArgs e)
+    {
+        var w = new HealthWindow { Owner = this };
+        w.ShowDialog();
     }
 
     private QualityMode SelectedQuality() => QualityCombo.SelectedIndex switch
@@ -35,55 +61,14 @@ public partial class MainWindow : Window
         _ => QualityMode.Balanced
     };
 
+    // ---- Start / stop hosting (NO driver install here — that happens in the installer). -----
     private async void StartButton_Click(object sender, RoutedEventArgs e)
     {
-        StartButton.IsEnabled = false;
-        bool useVirtualDisplay = VirtualDisplayCheck.IsChecked == true;
-
-        // --- Step 1: one-step driver setup (check → skip if present → auto-install). ---------
-        if (useVirtualDisplay)
-        {
-            SetBadge("MENYIAPKAN", (Brush)FindResource("Warn"));
-            var driver = await DriverInstaller.EnsureInstalledAsync(
-                m => Dispatcher.Invoke(() => LogText.Text = m));
-            await RefreshDriverStatusAsync();
-
-            if (!driver.Success)
-            {
-                var choice = MessageBox.Show(this,
-                    driver.Message +
-                    "\n\nYA = aktifkan Test Signing sekarang (perlu 1x restart Windows)." +
-                    "\nTIDAK = lanjut tanpa Layar 2 virtual (tangkap layar utama PC)." +
-                    "\nBATAL = berhenti.",
-                    "HP ke Monitor — Driver", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
-
-                if (choice == MessageBoxResult.Cancel) { ResetUi(); return; }
-                if (choice == MessageBoxResult.Yes)
-                {
-                    var ts = await DriverInstaller.EnableTestSigningAsync(
-                        m => Dispatcher.Invoke(() => LogText.Text = m));
-                    MessageBox.Show(this, ts.Message, "HP ke Monitor",
-                        MessageBoxButton.OK, MessageBoxImage.Information);
-                    ResetUi();
-                    return; // user restarts, then presses Mulai again
-                }
-                useVirtualDisplay = false; // No -> fall back to primary capture
-            }
-            else if (driver.RebootRequired)
-            {
-                MessageBox.Show(this,
-                    "Driver terpasang. Sebaiknya restart Windows agar Layar 2 aktif penuh, " +
-                    "lalu buka lagi dan tekan Mulai.",
-                    "HP ke Monitor", MessageBoxButton.OK, MessageBoxImage.Information);
-            }
-        }
-
-        // --- Step 2: start hosting with the chosen configuration. ----------------------------
         var opts = new SessionOptions
         {
             HostName = Environment.MachineName,
             Quality = SelectedQuality(),
-            UseVirtualDisplay = useVirtualDisplay,
+            UseVirtualDisplay = VirtualDisplayCheck.IsChecked == true,
             EncryptVideo = EncryptVideoCheck.IsChecked == true,
             UseHardwareEncoder = HwEncodeCheck.IsChecked == true
         };
@@ -95,13 +80,14 @@ public partial class MainWindow : Window
             MessageBox.Show(this, msg, "HP ke Monitor", MessageBoxButton.OK, MessageBoxImage.Warning));
         _session.Diagnostics.Updated += (_, _) => Dispatcher.Invoke(UpdateDiagnostics);
 
+        StartButton.IsEnabled = false;
         DisconnectButton.IsEnabled = true;
-        SetBadge("MENUNGGU", (Brush)FindResource("Warn"));
+        SetBadge("badge.waiting", (Brush)FindResource("Warn"));
 
         try { await _session.StartAsync(); }
         catch (Exception ex)
         {
-            MessageBox.Show(this, $"Gagal memulai: {ex.Message}", "HP ke Monitor");
+            MessageBox.Show(this, $"{Loc.T("start.fail")}: {ex.Message}", "HP ke Monitor");
             ResetUi();
         }
     }
@@ -116,7 +102,6 @@ public partial class MainWindow : Window
 
     private void DisplaySettings_Click(object sender, RoutedEventArgs e)
     {
-        // Open Windows Display Settings so the user can arrange Display 1 / Display 2.
         try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:display") { UseShellExecute = true }); }
         catch { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("desk.cpl") { UseShellExecute = true }); }
     }
@@ -125,16 +110,16 @@ public partial class MainWindow : Window
     {
         switch (s)
         {
-            case SessionState.Discovering: SetBadge("MENCARI", (Brush)FindResource("Warn")); break;
+            case SessionState.Discovering: SetBadge("badge.searching", (Brush)FindResource("Warn")); break;
             case SessionState.Connecting:
-            case SessionState.Configuring: SetBadge("MENYAMBUNG", (Brush)FindResource("Warn")); break;
-            case SessionState.Pairing: SetBadge("PAIRING", (Brush)FindResource("Warn")); break;
+            case SessionState.Configuring: SetBadge("badge.connecting", (Brush)FindResource("Warn")); break;
+            case SessionState.Pairing: SetBadge("badge.pairing", (Brush)FindResource("Warn")); break;
             case SessionState.Streaming:
-                SetBadge("TERSAMBUNG", (Brush)FindResource("Accent"));
+                SetBadge("badge.connected", (Brush)FindResource("Accent"));
                 PinCard.Visibility = Visibility.Collapsed;
                 DeviceNameText.Text = _session?.PeerDevice.Name ?? "Android";
                 break;
-            case SessionState.Reconnecting: SetBadge("MENYAMBUNG ULANG", (Brush)FindResource("Warn")); break;
+            case SessionState.Reconnecting: SetBadge("badge.reconnecting", (Brush)FindResource("Warn")); break;
             case SessionState.Disconnected:
             case SessionState.Idle: ResetUi(); break;
         }
@@ -144,13 +129,12 @@ public partial class MainWindow : Window
     {
         PinCard.Visibility = Visibility.Visible;
         PinText.Text = $"{pin[..3]}   {pin[3..]}";
-        PinPromptText.Text = $"\"{_session?.PeerDevice.Name}\" ingin terhubung. Masukkan kode ini di Android:";
+        PinPromptText.Text = Loc.T("pin.prompt");
         DeviceNameText.Text = _session?.PeerDevice.Name ?? "Android";
         Activate();
-        // Also show the PIN in a popup so it is always visible (never clipped by the window).
         MessageBox.Show(this,
-            $"Kode sambungan untuk \"{_session?.PeerDevice.Name ?? "Android"}\":\n\n        {pin[..3]}  {pin[3..]}\n\nMasukkan kode 6 digit ini di aplikasi HP ke Monitor pada perangkat Android kamu.",
-            "HP ke Monitor — Kode Sambungan", MessageBoxButton.OK, MessageBoxImage.Information);
+            $"{Loc.T("pin.prompt")}\n\n        {pin[..3]}  {pin[3..]}",
+            Loc.T("pin.title"), MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private void UpdateDiagnostics()
@@ -164,9 +148,10 @@ public partial class MainWindow : Window
         CodecText.Text = d.Codec;
     }
 
-    private void SetBadge(string text, Brush color)
+    private void SetBadge(string key, Brush color)
     {
-        StatusBadge.Text = text;
+        _badgeKey = key;
+        StatusBadge.Text = Loc.T(key);
         StatusBadge.Foreground = color;
     }
 
@@ -175,13 +160,14 @@ public partial class MainWindow : Window
         StartButton.IsEnabled = true;
         DisconnectButton.IsEnabled = false;
         PinCard.Visibility = Visibility.Collapsed;
-        SetBadge("TERPUTUS", (Brush)FindResource("FgMuted"));
+        SetBadge("badge.disconnected", (Brush)FindResource("FgMuted"));
         DeviceNameText.Text = "—";
         ConnText.Text = ResText.Text = FpsText.Text = LatencyText.Text = BitrateText.Text = "—";
     }
 
     protected override void OnClosed(EventArgs e)
     {
+        Loc.Changed -= ApplyLanguage;
         _session?.Dispose();
         base.OnClosed(e);
     }

@@ -79,6 +79,21 @@ public static class DriverInstaller
 
     public static bool IsInstalled() => GetInstalledVersion() != null;
 
+    // Best-effort test-signing check. bcdedit query needs admin, so a non-elevated call typically
+    // fails -> we return null ("unknown"). true/false only when we can actually read it.
+    public static bool? IsTestSigningOn()
+    {
+        var outp = RunCapture("bcdedit.exe", "/enum {current}");
+        if (string.IsNullOrEmpty(outp)) return null;
+        if (outp.IndexOf("denied", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            outp.IndexOf("Access is", StringComparison.OrdinalIgnoreCase) >= 0)
+            return null;
+        var m = Regex.Match(outp, @"testsigning\s+(Yes|No|On|Off)", RegexOptions.IgnoreCase);
+        if (!m.Success) return false; // bcdedit omits the line when test-signing is off
+        var v = m.Groups[1].Value.ToLowerInvariant();
+        return v == "yes" || v == "on";
+    }
+
     // Install the driver only if it is missing or older than the bundled package.
     public static async Task<DriverInstallResult> EnsureInstalledAsync(Action<string>? log = null)
     {
