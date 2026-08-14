@@ -145,17 +145,28 @@ void SwapChainProcessor::ProcessFrame(const ComPtr<ID3D11Texture2D>& frame) {
 }
 
 // ---------------------------------------------------------------------------------------
-// Mode reporting helpers.
-static void FillMonitorMode(DISPLAYCONFIG_VIDEO_SIGNAL_INFO& mode, const DisplayMode& m) {
+// Mode reporting helpers. Mirrors Microsoft's IddSampleDriver FillSignalInfo exactly.
+//
+// CRITICAL (Code 43 fix): AdditionalSignalInfo.vSyncFreqDivider MUST be 0 for MONITOR modes
+// (ParseMonitorDescription / GetDefaultDescriptionModes) but MUST be 1 for TARGET modes
+// (QueryTargetModes). The IddCx DDI validation logic specifically REJECTS a zero divider on
+// target modes and marks the device Code 43. videoStandard=255 is also required by the sample.
+static void FillMonitorMode(DISPLAYCONFIG_VIDEO_SIGNAL_INFO& mode, const DisplayMode& m,
+                            bool bMonitorMode) {
     mode = {};
     mode.totalSize.cx = mode.activeSize.cx = m.Width;
     mode.totalSize.cy = mode.activeSize.cy = m.Height;
-    mode.vSyncFreq.Numerator = m.VSync * 1000;
-    mode.vSyncFreq.Denominator = 1000;
+
+    // See CCD data types docs about the value 255 for videoStandard.
+    mode.AdditionalSignalInfo.vSyncFreqDivider = bMonitorMode ? 0 : 1;
+    mode.AdditionalSignalInfo.videoStandard = 255;
+
+    mode.vSyncFreq.Numerator = m.VSync;
+    mode.vSyncFreq.Denominator = 1;
     mode.hSyncFreq.Numerator = m.VSync * m.Height;
     mode.hSyncFreq.Denominator = 1;
     mode.scanLineOrdering = DISPLAYCONFIG_SCANLINE_ORDERING_PROGRESSIVE;
-    mode.pixelRate = (UINT64)m.Width * m.Height * m.VSync;
+    mode.pixelRate = (UINT64)m.VSync * (UINT64)m.Width * (UINT64)m.Height;
 }
 
 // ---------------------------------------------------------------------------------------
@@ -220,6 +231,7 @@ NTSTATUS EvtDeviceD0Entry(WDFDEVICE device, WDF_POWER_DEVICE_STATE) {
     IDDCX_ENDPOINT_VERSION version = {};
     version.Size = sizeof(version);
     version.MajorVer = 1;
+    version.MinorVer = 0;
     caps.EndPointDiagnostics.pFirmwareVersion = &version;
     caps.EndPointDiagnostics.pHardwareVersion = &version;
 
@@ -286,7 +298,7 @@ NTSTATUS EvtIddCxParseMonitorDescription(const IDARG_IN_PARSEMONITORDESCRIPTION*
     for (DWORD i = 0; i < ARRAYSIZE(s_modes); ++i) {
         in->pMonitorModes[i].Size = sizeof(IDDCX_MONITOR_MODE);
         in->pMonitorModes[i].Origin = IDDCX_MONITOR_MODE_ORIGIN_MONITORDESCRIPTOR;
-        FillMonitorMode(in->pMonitorModes[i].MonitorVideoSignalInfo, s_modes[i]);
+        FillMonitorMode(in->pMonitorModes[i].MonitorVideoSignalInfo, s_modes[i], /*bMonitorMode=*/true);
     }
     out->PreferredMonitorModeIdx = 0;
     return STATUS_SUCCESS;
@@ -299,7 +311,7 @@ NTSTATUS EvtIddCxMonitorGetDefaultModes(IDDCX_MONITOR, const IDARG_IN_GETDEFAULT
     for (DWORD i = 0; i < ARRAYSIZE(s_modes); ++i) {
         in->pDefaultMonitorModes[i].Size = sizeof(IDDCX_MONITOR_MODE);
         in->pDefaultMonitorModes[i].Origin = IDDCX_MONITOR_MODE_ORIGIN_DRIVER;
-        FillMonitorMode(in->pDefaultMonitorModes[i].MonitorVideoSignalInfo, s_modes[i]);
+        FillMonitorMode(in->pDefaultMonitorModes[i].MonitorVideoSignalInfo, s_modes[i], /*bMonitorMode=*/true);
     }
     return STATUS_SUCCESS;
 }
@@ -310,7 +322,7 @@ NTSTATUS EvtIddCxMonitorQueryModes(IDDCX_MONITOR, const IDARG_IN_QUERYTARGETMODE
     if (in->TargetModeBufferInputCount < ARRAYSIZE(s_modes)) return STATUS_SUCCESS;
     for (DWORD i = 0; i < ARRAYSIZE(s_modes); ++i) {
         in->pTargetModes[i].Size = sizeof(IDDCX_TARGET_MODE);
-        FillMonitorMode(in->pTargetModes[i].TargetVideoSignalInfo.targetVideoSignalInfo, s_modes[i]);
+        FillMonitorMode(in->pTargetModes[i].TargetVideoSignalInfo.targetVideoSignalInfo, s_modes[i], /*bMonitorMode=*/false);
     }
     return STATUS_SUCCESS;
 }

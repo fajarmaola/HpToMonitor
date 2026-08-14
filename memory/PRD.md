@@ -99,3 +99,20 @@ created (per the user's explicit engineering rule).
   resolved by verifying the file contents on GitHub before each run.
 - REMAINING (hardware/runtime, cannot be done in CI or Linux container): test-sign the driver + install on a
   Windows PC (bcdedit /set testsigning on), then E2E LAN streaming test. USB + Wi-Fi Direct transports are still stubs.
+
+## Fix (Code 43) — IddCx target-mode vSyncFreqDivider
+- Symptom: after the Code 10 fix (firmware/hardware version), device now reported Code 43
+  ("Windows has stopped this device because it has reported problems").
+- ROOT CAUSE: FillMonitorMode always zero-inited the mode (vSyncFreqDivider=0) for ALL callbacks,
+  including EvtIddCxMonitorQueryTargetModes. IddCx DDI validation REJECTS a zero divider on
+  TARGET modes -> Code 43. (Per MS docs "indirect-display-debugging" + IddSampleDriver FillSignalInfo.)
+- FIX (windows/SecondScreen.DisplayDriver/Driver.cpp):
+  * FillMonitorMode now takes bool bMonitorMode; vSyncFreqDivider = bMonitorMode ? 0 : 1.
+  * Added AdditionalSignalInfo.videoStandard = 255 (matches sample).
+  * vSyncFreq set to VSync/1 (was VSync*1000/1000); pixelRate = VSync*Width*Height.
+  * Monitor callbacks (ParseMonitorDescription, GetDefaultDescriptionModes) call with true;
+    QueryTargetModes calls with false.
+  * IDDCX_ENDPOINT_VERSION now also sets MinorVer=0.
+- VERIFICATION: cannot be tested in this Linux container (no Windows runtime). Requires: Save to
+  GitHub -> CI (windows-driver job) rebuild -> install signed driver on Windows PC -> Device Manager
+  status OK. Automated web testing agents are N/A for a native UMDF display driver.
