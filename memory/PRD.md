@@ -81,3 +81,21 @@ created (per the user's explicit engineering rule).
 - CI (.github/workflows/windows.yml `windows-driver` job): now does `nuget restore` then msbuild,
   no choco/VSIX, no hardcoded WindowsTargetPlatformVersion.
 - STATUS: pushed for CI verification (cannot compile Windows drivers in the Linux container).
+
+## RESOLVED (Aug 14, 2026) — IddCx driver CI build is GREEN
+- The entire Windows workflow now passes on the user's repo (teleraya-official/SecondScreenLocal),
+  run "Windows #13", commit 62f543e — verified via user's GitHub Actions screenshot (green).
+- Full fix chain for the WDK/IddCx driver CI:
+  1. WDK via NuGet (Microsoft.Windows.WDK.x64 + SDK.CPP 10.0.28000.2526) -> fixes wudfwdm.h/wdf.h/iddcx.h not found.
+  2. INF rewritten to Microsoft's current IddSampleDriver pattern (DIRID 12\UMDF + WUDFRD Include/Needs,
+     TargetOS 10.0...17763) -> fixes InfVerif error 1199 + warning 2084.
+  3. Driver.cpp updated to current IddCx 1.4 API: IddCxSwapChainFinishedProcessingFrame(swapchain) [no hBuffer],
+     IDARG_OUT_MONITORARRIVAL -> fixes 12 C++ compile errors. TreatWarningAsError=false added.
+  4. vcxproj <FilesToPackage Include="$(TargetPath)"/> -> DLL packaged so Inf2Cat finds it, .cat generated.
+- Driver compiles, links, passes ApiValidator (Universal), and Inf2Cat produces the catalog.
+- Artifacts available: SecondScreenLocal-Windows-x64 (.exe+.dll), SecondScreenLocal-DisplayDriver (.dll/.inf/.cat),
+  SecondScreenLocal-debug.apk.
+- NOTE (recurring during this session): user's "Save to Github" pushes sometimes lagged, so CI built stale code;
+  resolved by verifying the file contents on GitHub before each run.
+- REMAINING (hardware/runtime, cannot be done in CI or Linux container): test-sign the driver + install on a
+  Windows PC (bcdedit /set testsigning on), then E2E LAN streaming test. USB + Wi-Fi Direct transports are still stubs.
