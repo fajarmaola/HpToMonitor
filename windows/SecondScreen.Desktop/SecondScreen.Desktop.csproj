@@ -25,8 +25,8 @@
        in one step (DriverInstaller). Build the driver first (or set SSL_DRIVER_DIR). Silently
        skipped when the package isn't present (e.g. Core-only dev builds). -->
   <ItemGroup>
-    <None Include="..\SecondScreen.DisplayDriver\x64\Release\SecondScreenDisplay\**\*"
-          Condition="Exists('..\SecondScreen.DisplayDriver\x64\Release\SecondScreenDisplay')">
+    <None Include="..\SecondScreen.DisplayDriver\x64\Release\SecondScreen.DisplayDriver\**\*"
+          Condition="Exists('..\SecondScreen.DisplayDriver\x64\Release\SecondScreen.DisplayDriver')">
       <Link>driver\%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

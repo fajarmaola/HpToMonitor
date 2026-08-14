@@ -14,7 +14,7 @@
 #endif
 ; Path to the built driver package folder (overridable via ISCC /DDriverDir=...).
 #ifndef DriverDir
-  #define DriverDir "..\SecondScreen.DisplayDriver\x64\Release\SecondScreenDisplay"
+  #define DriverDir "..\SecondScreen.DisplayDriver\x64\Release\SecondScreen.DisplayDriver"
 #endif
 
 [Setup]

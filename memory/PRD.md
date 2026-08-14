@@ -191,3 +191,10 @@ created (per the user's explicit engineering rule).
   -P props, buildConfig=true. MainActivity "Cek Pembaruan" button + AlertDialog + I18n keys.
 - VERIFY: Save to GitHub (repo Public) -> release.yml builds + publishes "latest" release with the 3 assets
   -> install app -> "Cek Pembaruan" fetches & updates. Cannot test in Linux container.
+
+## Fix: Windows CI "DRIVER_COMPILE_FAILED" (false negative)
+- Driver ACTUALLY builds fine (dll+inf+cat). Bug was the post-build path check: WDK DriverPackage
+  output folder is named after the PROJECT = "SecondScreen.DisplayDriver", NOT "SecondScreenDisplay".
+- Fixed in release.yml + windows.yml: check x64\Release\SecondScreen.DisplayDriver\SecondScreenDisplay.dll
+  (fallback flat dll); stage installer driver from that package folder (has the .cat) into publish\driver.
+- Also fixed .iss default DriverDir + Desktop.csproj glob to the SecondScreen.DisplayDriver package folder.

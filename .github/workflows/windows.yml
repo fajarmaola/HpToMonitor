@@ -41,7 +41,7 @@ jobs:
           for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VSPATH=%%i
           call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat"
           msbuild windows\SecondScreen.DisplayDriver\SecondScreen.DisplayDriver.vcxproj /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off /v:normal
-          if not exist "windows\SecondScreen.DisplayDriver\x64\Release\SecondScreenDisplay\SecondScreenDisplay.dll" (echo DRIVER_COMPILE_FAILED & exit /b 1)
+          if not exist "windows\SecondScreen.DisplayDriver\x64\Release\SecondScreen.DisplayDriver\SecondScreenDisplay.dll" if not exist "windows\SecondScreen.DisplayDriver\x64\Release\SecondScreenDisplay.dll" (echo DRIVER_COMPILE_FAILED & exit /b 1)
           echo DRIVER_COMPILE_SUCCESS
 
       - name: Publish self-contained SecondScreenLocal.exe
@@ -56,7 +56,9 @@ jobs:
       - name: Stage driver next to the app (publish\driver)
         run: |
           New-Item -ItemType Directory -Force publish\driver | Out-Null
-          Copy-Item -Recurse -Force windows\SecondScreen.DisplayDriver\x64\Release\SecondScreenDisplay\* publish\driver\
+          $pkg = "windows\SecondScreen.DisplayDriver\x64\Release\SecondScreen.DisplayDriver"
+          if (Test-Path $pkg) { Copy-Item -Recurse -Force "$pkg\*" publish\driver\ }
+          else { Copy-Item -Force windows\SecondScreen.DisplayDriver\x64\Release\SecondScreenDisplay.* publish\driver\ }
 
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
