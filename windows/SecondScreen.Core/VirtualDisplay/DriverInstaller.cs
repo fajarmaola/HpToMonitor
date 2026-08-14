@@ -174,17 +174,40 @@ public static class DriverInstaller
         return r;
     }
 
+    // pnputil /delete-driver needs the PUBLISHED name (oemNN.inf), not the original INF filename.
+    public static string? GetPublishedOemName()
+    {
+        var output = RunCapture("pnputil.exe", "/enum-drivers");
+        if (string.IsNullOrEmpty(output)) return null;
+        foreach (var b in Regex.Split(output, @"\r?\n\s*\r?\n"))
+        {
+            if (b.IndexOf("secondscreendisplay.inf", StringComparison.OrdinalIgnoreCase) < 0) continue;
+            var m = Regex.Match(b, @"oem\d+\.inf", RegexOptions.IgnoreCase);
+            if (m.Success) return m.Value;
+        }
+        return null;
+    }
+
     // Best-effort removal (used by uninstall/troubleshooting).
     public static async Task<DriverInstallResult> UninstallAsync(Action<string>? log = null)
     {
         var r = new DriverInstallResult();
-        log?.Invoke("Menghapus driver Layar 2…");
+        log?.Invoke("Mencari paket driver Layar 2…");
+        var oem = await Task.Run(GetPublishedOemName);
+        if (oem == null)
+        {
+            r.Success = true;
+            r.Message = "Driver Layar 2 sudah tidak terpasang.";
+            log?.Invoke(r.Message);
+            return r;
+        }
+        log?.Invoke($"Menghapus driver Layar 2 ({oem})…");
         var (ok, code, cancelled) = await RunElevatedAsync("pnputil.exe",
-            $"/delete-driver {InfFileName} /uninstall /force");
+            $"/delete-driver {oem} /uninstall /force");
         if (cancelled) { r.Message = "Dibatalkan pada UAC."; return r; }
         r.Success = ok && (code == 0 || code == 3010);
         r.RebootRequired = code == 3010;
-        r.Message = r.Success ? "Driver dihapus." : $"Gagal menghapus (kode {code}).";
+        r.Message = r.Success ? "Driver Layar 2 dihapus." : $"Gagal menghapus (kode {code}).";
         log?.Invoke(r.Message);
         return r;
     }
