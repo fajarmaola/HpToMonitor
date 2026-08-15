@@ -74,17 +74,27 @@ public sealed class VideoStreamer : IDisposable
             await Task.Delay(1500);
             if (_running && FramesSent == 0)
             {
+                // Native side self-heals (CPU converter / software-encoder fallback) — give it time.
+                await Task.Delay(5000);
+            }
+            if (_running && FramesSent == 0)
+            {
                 string err = NativeInterop.LastError();
                 Log.Error($"Video pipeline sent 0 frames. {err}");
                 FatalError?.Invoke(err.Length > 0
                     ? err
                     : "No video frames were produced (capture returned nothing).");
             }
-            else if (_running && NativeInterop.LastError().Length > 0)
+            else if (_running && NativeInterop.LastError().Contains("PRIMARY"))
             {
-                // e.g. fell back to primary-display mirror — inform the user but keep streaming.
+                // Fell back to primary-display mirror — the user must know (extend didn't work).
                 Log.Warn(NativeInterop.LastError());
                 FatalError?.Invoke(NativeInterop.LastError());
+            }
+            else if (_running && NativeInterop.LastError().Length > 0)
+            {
+                // Frames are flowing: the pipeline recovered on its own. Log, don't alarm.
+                Log.Warn(NativeInterop.LastError());
             }
         });
     }

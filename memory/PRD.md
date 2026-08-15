@@ -463,3 +463,28 @@ created (per the user's explicit engineering rule).
 - This is the OBS/Sunshine-style path and avoids the MFT INVALID_CALL entirely.
 - VERIFY: rebuild -> phone should show the desktop; BITRATE shows a number. Any remaining failure now
   names the exact D3D video step + HRESULT.
+
+## CreateVideoProcessorInputView fix + CPU converter + SW-encoder self-heal — Jun 2026
+- Popup: "encoder(gdi): CreateVideoProcessorInputView" => GDI capture OK, D3D11 VP rejects the input view.
+- ROOT CAUSE (documented, learn.microsoft.com CreateVideoProcessorInputView): input-view textures may only
+  have bind flags 0 / DECODER / VIDEO_ENCODER / RENDER_TARGET / UNORDERED_ACCESS. Our inCopy_ used
+  D3D11_BIND_SHADER_RESOURCE (not allowed) -> E_INVALIDARG.
+- FIXES (layered so SOMETHING always works):
+  1. inCopy_ now D3D11_BIND_RENDER_TARGET (MediaFoundationH264Encoder.cpp ConvertToNv12Gpu).
+  2. ID3D11Multithread::SetMultithreadProtected(TRUE) at encoder Initialize — REQUIRED when sharing the
+     device with MF hardware MFTs (missing protection = random 0x887A0001 races).
+  3. InitVideoProcessor: CheckVideoProcessorFormat(BGRA input / NV12 output) + explicit color spaces
+     (full-range RGB in -> BT.709 limited NV12 out).
+  4. NEW ConvertToNv12Cpu: staging readback + software BGRA->NV12 (BT.709) into MFCreate2DMediaBuffer.
+     Any GPU-convert failure permanently switches to CPU (useCpuConvert_) — immune to driver quirks.
+  5. NativeApi WorkerLoop self-heal: if outputs==0 after 10 inputs or 5 encode failures, Shutdown +
+     re-Initialize the encoder with useHardware=false (Microsoft SW H.264 + CPU convert = guaranteed).
+  6. VideoStreamer watchdog: extra 5s grace when 0 frames (lets native self-heal); when frames DO flow,
+     stale errors only Log.Warn (no popup) except the PRIMARY-mirror fallback notice.
+  7. Cleanup: removed dead CLSID_VideoProcessorMFT converter path; async/enc ProcessInput errors now
+     include HRESULT hex.
+- Worst-case guaranteed chain: GDI capture -> CPU BGRA->NV12 -> SW H.264 -> phone shows picture.
+- VERIFY: Save to GitHub -> CI -> reinstall (footer version must increase) -> connect phone -> desktop
+  should appear + BITRATE > 0. If a popup still appears it names stage+HRESULT (e.g. CreateVPInputView=0x..).
+- NEXT after video confirmed: phone rotation detection (user request), match exact phone resolution.
+

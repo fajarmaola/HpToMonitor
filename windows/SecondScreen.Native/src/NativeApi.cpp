@@ -118,6 +118,8 @@ namespace {
         const int gw = g_capture.Width(), gh = g_capture.Height();
         auto lastEncode = std::chrono::steady_clock::now() - std::chrono::seconds(1);
         g_encoder.RequestKeyframe(); // make the very first encoded frame an IDR
+        bool triedSwFallback = false;
+        int encodeFails = 0;
 
         while (g_running) {
             int targetFps = g_fps.load();
@@ -128,7 +130,7 @@ namespace {
             if (r == 1 && tex) {
                 // Fast path: real screen change captured via Desktop Duplication (motion/video).
                 if (g_encoder.EncodeFrame(tex.Get(), NowUs())) g_inputs.fetch_add(1);
-                else SetLastError("encoder(dxgi): " + g_encoder.LastError());
+                else { ++encodeFails; SetLastError("encoder(dxgi): " + g_encoder.LastError()); }
                 g_capture.ReleaseFrame();
                 lastEncode = std::chrono::steady_clock::now();
             } else if (r < 0) {
@@ -150,7 +152,7 @@ namespace {
                     if (GdiGrab(g_capture.Device(), left, top, gw, gh, gtex) && gtex) {
                         g_encoder.RequestKeyframe();
                         if (g_encoder.EncodeFrame(gtex.Get(), NowUs())) g_inputs.fetch_add(1);
-                        else SetLastError("encoder(gdi): " + g_encoder.LastError());
+                        else { ++encodeFails; SetLastError("encoder(gdi): " + g_encoder.LastError()); }
                         lastEncode = std::chrono::steady_clock::now();
                     } else {
                         SetLastError("GDI capture failed (BitBlt/GetDIBits/CreateTexture2D) for rect " +
@@ -166,6 +168,25 @@ namespace {
                 SetLastError("Encoder menerima " + std::to_string(g_inputs.load()) +
                              " frame tetapi output H.264 = 0 (MFT tidak mengeluarkan frame). " +
                              g_encoder.LastError());
+            }
+
+            // Self-heal: if the (usually hardware) encoder produced NOTHING, rebuild it once as
+            // SOFTWARE — CPU convert + Microsoft SW H.264 works on every machine.
+            if (!triedSwFallback && cfg.useHardware && g_outputs.load() == 0 &&
+                (g_inputs.load() >= 10 || encodeFails >= 5)) {
+                triedSwFallback = true;
+                g_encoder.Shutdown();
+                EncoderConfig swCfg = cfg;
+                swCfg.useHardware = false;
+                if (g_encoder.Initialize(g_capture.Device(), swCfg)) {
+                    g_encoder.RequestKeyframe();
+                    g_inputs = 0; encodeFails = 0;
+                    SetLastError("Encoder hardware tidak menghasilkan output - otomatis beralih ke encoder software.");
+                } else {
+                    SetLastError("encoder software init: " + g_encoder.LastError());
+                    g_status = -2;
+                    break;
+                }
             }
 
             // Pace to target FPS (encoder itself also rate-limits via duration).
