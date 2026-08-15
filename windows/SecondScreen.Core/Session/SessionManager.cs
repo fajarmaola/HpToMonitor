@@ -161,6 +161,7 @@ public sealed class SessionManager : IDisposable
 
         int w = _peerDevice.Width, h = _peerDevice.Height, hz = _peerDevice.RefreshHz;
         int outputIndex = 0;
+        bool usingVirtual = false;
 
         if (_opts.UseVirtualDisplay && _vdisplay.IsDriverPresent())
         {
@@ -168,12 +169,19 @@ public sealed class SessionManager : IDisposable
             {
                 // Capture the newly-added display (typically the last output index).
                 outputIndex = Math.Max(0, NativeSafeOutputCount() - 1);
+                usingVirtual = true;
+            }
+            else
+            {
+                Log.Warn("Virtual display unavailable — mirroring the primary display. " +
+                         "Ensure the app runs as Administrator (SwDeviceCreate needs elevation).");
             }
         }
         else
         {
             Log.Warn("IddCx driver not present — capturing primary display instead of a virtual Display 2.");
         }
+        Diagnostics.UsingVirtualDisplay = usingVirtual;
 
         var (bitrate, fps) = QualityPreset(_opts.Quality, w, h, hz);
         _adaptive = new AdaptiveController(bitrate);

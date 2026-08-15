@@ -211,3 +211,22 @@ created (per the user's explicit engineering rule).
   be read (non-elevated/localized), so panel no longer mislabels active Test Signing as "nonaktif".
 - VERIFY on user PC: Save to GitHub -> new build test-signs cat -> reinstall -> keep Test Mode -> connect
   phone -> "HP ke Monitor Virtual Display" should load.
+
+## ROOT CAUSE FOUND: virtual display silently mirrors (E_ACCESSDENIED) — Jun 2026
+- Symptom: driver installed (v21.5.10.160) + Test Signing ON + phone connected & streaming,
+  BUT Windows Display Settings shows "no other display found" (mirror, not a real Display 2).
+- Diagnostic from user log %LOCALAPPDATA%\SecondScreenLocal\logs\ssl-*.log:
+  "Virtual display create failed (-2147024891); falling back to primary capture"
+  -2147024891 = 0x80070005 = E_ACCESSDENIED.
+- ROOT CAUSE: SwDeviceCreate for a ROOT-enumerated device REQUIRES admin elevation. App manifest
+  was asInvoker -> SwDeviceCreate denied -> SessionManager silently falls back to primary-display
+  mirroring. (Same requirement as Microsoft's IddSampleApp.)
+- FIX (code, needs GitHub CI rebuild — cannot compile in Linux):
+  * windows/SecondScreen.Desktop/app.manifest: requestedExecutionLevel -> requireAdministrator.
+  * windows/SecondScreen.Native/src/SwDevice.cpp: capture real creation HRESULT from callback,
+    10s timeout, return actual error (was ignoring result -> "fake success").
+  * DriverInstaller.UninstallAsync: purge ALL stale oemNN.inf copies (was only the first).
+  * Diagnostics.UsingVirtualDisplay + SessionManager sets it; MainWindow shows "LAN • Layar Virtual"
+    vs "LAN • Mirror" so the user can confirm a real Display 2.
+- VERIFY on user PC: Save to GitHub -> reinstall -> launch (accept UAC) -> connect phone ->
+  ConnText should read "Layar Virtual" and Windows Display Settings should show Display 2.

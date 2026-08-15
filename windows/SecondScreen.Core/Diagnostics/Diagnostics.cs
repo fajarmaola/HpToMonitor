@@ -16,6 +16,10 @@ public sealed class Diagnostics
     public long DroppedFrames { get; set; }
     public double JitterMs { get; set; }
 
+    // True when a real virtual "Display 2" is active; false when we fell back to mirroring the
+    // primary display (e.g. driver missing or SwDeviceCreate denied without elevation).
+    public bool UsingVirtualDisplay { get; set; }
+
     public event EventHandler? Updated;
     public void RaiseUpdated() => Updated?.Invoke(this, EventArgs.Empty);
 }

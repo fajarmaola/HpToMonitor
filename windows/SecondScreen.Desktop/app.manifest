@@ -4,9 +4,12 @@
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
     <security>
       <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
-        <!-- asInvoker: no elevation needed for LAN streaming + SendInput. Driver install is a
-             separate elevated step done by the installer (docs/DRIVER_SETUP.md). -->
-        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
+        <!-- requireAdministrator: creating the root-enumerated IddCx virtual display via
+             SwDeviceCreate REQUIRES elevation. Running asInvoker makes SwDeviceCreate fail with
+             E_ACCESSDENIED (0x80070005) and the app silently mirrors the primary display instead
+             of enumerating a real "Display 2". This is the same requirement as Microsoft's
+             IddSampleApp. -->
+        <requestedExecutionLevel level="requireAdministrator" uiAccess="false" />
       </requestedPrivileges>
     </security>
   </trustInfo>

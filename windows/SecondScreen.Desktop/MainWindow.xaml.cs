@@ -171,7 +171,9 @@ public partial class MainWindow : Window
     private void UpdateDiagnostics()
     {
         var d = _session!.Diagnostics;
-        ConnText.Text = d.Connection;
+        ConnText.Text = d.Width > 0
+            ? $"{d.Connection} • {(d.UsingVirtualDisplay ? "Layar Virtual" : "Mirror")}"
+            : d.Connection;
         ResText.Text = d.Width > 0 ? $"{d.Width} × {d.Height}" : "—";
         FpsText.Text = d.Fps > 0 ? $"{d.Fps} FPS" : "—";
         LatencyText.Text = d.NetworkLatencyMs > 0 ? $"{d.NetworkLatencyMs:0} ms" : "—";
