@@ -259,3 +259,20 @@ created (per the user's explicit engineering rule).
 - NOTE for future: if windows-2022 is retired, either (a) install VS2022 build tools on windows-2025,
   or (b) move to WDK 28000 + VS2026 but ALSO set WindowsTargetPlatformVersion to a 26100 SDK so the
   driver still targets 24H2 (avoids Code 31).
+
+## REAL Code 31 root cause: wrong UmdfExtensions (IddCx0104) — Jun 2026
+- After WDK/runner fixes, driver still Code 31 / STATUS_UNSUCCESSFUL (installs + node enumerates,
+  but fails to LOAD).
+- ROOT CAUSE: INF had `UmdfExtensions = IddCx0104`. "IddCx0102" is the FIXED registered name of the
+  IddCx UMDF class extension — it stays IddCx0102 even for IddCx 1.4/1.6 drivers (verified against
+  Microsoft's official IddSampleDriver.inf on main, which supports up to IddCx 1.6 yet still declares
+  IddCx0102). A previous agent wrongly changed 0102->0104 to "match versions". Windows has no
+  "IddCx0104" extension -> cannot find/load it -> Code 31.
+- FIX (SecondScreenDisplay.inf):
+  * UmdfExtensions = IddCx0102  (reverted from IddCx0104 — THE fix)
+  * Added HKR, "WUDF", "DeviceGroupId", %REG_SZ%, "SecondScreenDisplayGroup" (matches official sample)
+  * UmdfLibraryVersion stays 2.25.0 (matches vcxproj UMDF_VERSION_MINOR=25; valid on 24H2)
+- Reference: official INF https://github.com/microsoft/Windows-driver-samples video/IndirectDisplay/
+  IddSampleDriver/IddSampleDriver.inf  (UmdfExtensions=IddCx0102, has DeviceGroupId).
+- VERIFY: Save to GitHub -> reinstall -> run as admin -> connect phone -> driver loads (no Code 31),
+  ConnText "Layar Virtual", Display 2 appears.

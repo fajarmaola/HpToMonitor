@@ -40,6 +40,7 @@ AddReg  = SecondScreenDisplay_HardwareDeviceSettings
 [SecondScreenDisplay_HardwareDeviceSettings]
 ; IddCx reflector requires the IndirectKmd kernel-mode component as an upper filter.
 HKR,, "UpperFilters", %REG_MULTI_SZ%, "IndirectKmd"
+HKR, "WUDF", "DeviceGroupId", %REG_SZ%, "SecondScreenDisplayGroup"
 
 [SecondScreenDisplay_Install.NT.Services]
 Include = WUDFRD.inf
@@ -53,7 +54,11 @@ UmdfKernelModeClientPolicy = AllowKernelModeClients
 [SecondScreenDisplay_UmdfInstall]
 UmdfLibraryVersion = 2.25.0
 ServiceBinary      = %12%\UMDF\SecondScreenDisplay.dll
-UmdfExtensions     = IddCx0104
+; IddCx0102 is the FIXED registered name of the IddCx UMDF class extension — it stays "IddCx0102"
+; even for IddCx 1.4/1.6 drivers (Microsoft's official IddSampleDriver uses IddCx0102). Declaring a
+; version-specific name like IddCx0104 makes Windows unable to find the extension, so the driver
+; fails to load with Device Manager "Code 31 / STATUS_UNSUCCESSFUL".
+UmdfExtensions     = IddCx0102
 
 [DestinationDirs]
 UMDriverCopy = 12,UMDF ; copy to drivers\umdf
