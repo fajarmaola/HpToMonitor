@@ -8,6 +8,7 @@
 #include <mutex>
 #include <chrono>
 #include <string>
+#include <cstring>
 #include <combaseapi.h>
 
 using namespace ssl;
@@ -15,12 +16,19 @@ using namespace ssl;
 namespace {
     std::thread g_worker;
     std::atomic<bool> g_running{false};
+    std::atomic<int> g_status{0};   // 0 = idle/starting, 1 = capturing OK, <0 = init failed
     DxgiCapture g_capture;
     MediaFoundationH264Encoder g_encoder;
     SslEncodedFrameCallback g_cb = nullptr;
     void* g_user = nullptr;
     std::atomic<int> g_fps{60};
-    thread_local std::string g_lastError;
+    std::mutex g_errMutex;
+    std::string g_lastError;        // shared across threads — guarded by g_errMutex (was thread_local: bug)
+
+    void SetLastError(const std::string& msg) {
+        std::lock_guard<std::mutex> lk(g_errMutex);
+        g_lastError = msg;
+    }
 
     uint64_t NowUs() {
         using namespace std::chrono;
@@ -30,19 +38,32 @@ namespace {
     void WorkerLoop(int outputIndex, EncoderConfig cfg) {
         CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 
-        if (!g_capture.Initialize(outputIndex)) {
-            g_lastError = "capture init: " + g_capture.LastError();
-            g_running = false; CoUninitialize(); return;
+        bool captureOk = g_capture.Initialize(outputIndex);
+        if (!captureOk) {
+            std::string first = g_capture.LastError();
+            g_capture.Shutdown();
+            // Fallback: capture the PRIMARY display (index 0) so at least SOMETHING streams
+            // (mirror). This proves the encode+network+decode path works and isolates a
+            // virtual-display-specific capture problem from a whole-pipeline problem.
+            if (outputIndex != 0 && g_capture.Initialize(0)) {
+                SetLastError("Virtual-display capture failed (" + first +
+                             "). Fell back to PRIMARY display mirror.");
+                captureOk = true;
+            } else {
+                SetLastError("capture init (output " + std::to_string(outputIndex) + "): " + first);
+                g_status = -1; g_running = false; CoUninitialize(); return;
+            }
         }
         cfg.width = g_capture.Width();
         cfg.height = g_capture.Height();
         if (!g_encoder.Initialize(g_capture.Device(), cfg)) {
-            g_lastError = "encoder init: " + g_encoder.LastError();
-            g_running = false; CoUninitialize(); return;
+            SetLastError("encoder init: " + g_encoder.LastError());
+            g_status = -2; g_running = false; g_capture.Shutdown(); CoUninitialize(); return;
         }
         g_encoder.SetCallback([](uint32_t id, uint64_t ts, bool key, const uint8_t* d, int n) {
             if (g_cb) g_cb(id, ts, key ? 1 : 0, d, n, g_user);
         });
+        g_status = 1; // capture + encoder initialized; frames should now flow
 
         while (g_running) {
             int targetFps = g_fps.load();
@@ -83,6 +104,7 @@ SSL_API int SSL_CALL SslNativeStart(int outputIndex, int fps, int bitrateKbps,
                                     int useHardware, SslEncodedFrameCallback cb, void* user) {
     if (g_running) return -100; // already running
     g_cb = cb; g_user = user; g_fps = fps > 0 ? fps : 60;
+    g_status = 0; SetLastError("");
     EncoderConfig cfg;
     cfg.fps = g_fps.load();
     cfg.bitrateKbps = bitrateKbps > 0 ? bitrateKbps : 8000;
@@ -100,11 +122,17 @@ SSL_API void SSL_CALL SslNativeStop() {
     if (!g_running) return;
     g_running = false;
     if (g_worker.joinable()) g_worker.join();
+    g_status = 0;
     g_cb = nullptr; g_user = nullptr;
 }
 
+SSL_API int SSL_CALL SslNativeGetStatus() { return g_status.load(); }
+
 SSL_API const char* SSL_CALL SslNativeLastError() {
-    return g_lastError.c_str();
+    static char buf[512];
+    std::lock_guard<std::mutex> lk(g_errMutex);
+    strncpy_s(buf, sizeof(buf), g_lastError.c_str(), _TRUNCATE);
+    return buf;
 }
 
 } // extern "C"

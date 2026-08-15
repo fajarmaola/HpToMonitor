@@ -28,6 +28,8 @@ SSL_API void SSL_CALL SslNativeSetBitrate(int kbps);
 SSL_API void SSL_CALL SslNativeSetFps(int fps);
 SSL_API void SSL_CALL SslNativeStop();
 SSL_API const char* SSL_CALL SslNativeLastError();
+// Pipeline status: 0 = idle/starting, 1 = capturing OK, negative = init failed (see LastError).
+SSL_API int  SSL_CALL SslNativeGetStatus();
 
 // ---- Virtual display (IddCx) ---------------------------------------------------------
 // Creates a software device that loads the IddCx driver -> Windows enumerates a new monitor.

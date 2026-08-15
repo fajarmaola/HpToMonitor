@@ -1,5 +1,6 @@
 #include "DxgiCapture.h"
 #include <vector>
+#include <cstdio>
 
 namespace ssl {
 
@@ -60,7 +61,8 @@ bool DxgiCapture::Initialize(int outputIndex) {
     ComPtr<IDXGIAdapter1> adapter;
     ComPtr<IDXGIOutput1> output1;
     if (!ResolveOutput(outputIndex, adapter, output1)) {
-        lastError_ = "output index not found (is the virtual display active?)";
+        lastError_ = "output index " + std::to_string(outputIndex) +
+                     " not found (is the virtual display active/extended?)";
         return false;
     }
     if (!CreateDeviceForAdapter(adapter)) return false;
@@ -69,12 +71,43 @@ bool DxgiCapture::Initialize(int outputIndex) {
     output1->GetDesc(&desc);
     width_  = desc.DesktopCoordinates.right - desc.DesktopCoordinates.left;
     height_ = desc.DesktopCoordinates.bottom - desc.DesktopCoordinates.top;
-
-    HRESULT hr = output1->DuplicateOutput(device_.Get(), &duplication_);
-    if (FAILED(hr)) {
-        // E_ACCESSDENIED often means a secure/UAC desktop or another duplicator holds it.
-        lastError_ = "DuplicateOutput failed (0x" + std::to_string((unsigned)hr) + ")";
+    if (!desc.AttachedToDesktop || width_ <= 0 || height_ <= 0) {
+        lastError_ = "output " + std::to_string(outputIndex) +
+                     " is not attached to the desktop (inactive display — 'Show only on 1'?)";
         return false;
+    }
+
+    char err[128] = {0};
+    HRESULT hr = E_FAIL;
+
+    // Prefer DuplicateOutput1 (DXGI 1.5) with an explicit format list — IddCx/virtual displays
+    // frequently reject the legacy DuplicateOutput but accept DuplicateOutput1.
+    ComPtr<IDXGIOutput5> output5;
+    if (SUCCEEDED(output1.As(&output5))) {
+        const DXGI_FORMAT fmts[] = {
+            DXGI_FORMAT_B8G8R8A8_UNORM,
+            DXGI_FORMAT_R8G8B8A8_UNORM,
+            DXGI_FORMAT_R10G10B10A2_UNORM,
+            DXGI_FORMAT_R16G16B16A16_FLOAT,
+        };
+        hr = output5->DuplicateOutput1(device_.Get(), 0,
+                 (UINT)(sizeof(fmts) / sizeof(fmts[0])), fmts, &duplication_);
+        if (FAILED(hr)) {
+            snprintf(err, sizeof(err), "DuplicateOutput1=0x%08X; ", (unsigned)hr);
+            duplication_.Reset();
+        }
+    }
+
+    // Fallback to the classic path (also covers non-per-monitor-DPI-aware processes where
+    // DuplicateOutput1 returns E_INVALIDARG).
+    if (!duplication_) {
+        hr = output1->DuplicateOutput(device_.Get(), &duplication_);
+        if (FAILED(hr)) {
+            char err2[192];
+            snprintf(err2, sizeof(err2), "%sDuplicateOutput=0x%08X", err, (unsigned)hr);
+            lastError_ = err2; // 0x887A0004 = DXGI_ERROR_UNSUPPORTED, 0x80070005 = E_ACCESSDENIED
+            return false;
+        }
     }
     return true;
 }

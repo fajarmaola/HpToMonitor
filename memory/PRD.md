@@ -318,3 +318,34 @@ created (per the user's explicit engineering rule).
 - VERIFY on user PC: Save to GitHub -> CI build -> reinstall -> run as admin -> connect phone ->
   Display Settings should read "Perluas tampilan ini" with box 2 ACTIVE; phone shows an empty
   extended desktop you can drag windows onto.
+
+## Black phone / zero bitrate fix: capture pipeline silent failure — Jul 2025
+- Symptom: phone connects (Streaming, 60fps) but screen is BLACK and BITRATE shows "—" (0). Windows
+  side sent ~0 bytes -> native capture->encode produced no frames. Dragging windows onto Display 2
+  shows nothing (it's an empty extended desktop AND capture is dead).
+- ROOT CAUSE (troubleshoot_agent RCA, 4 compounding bugs):
+  1. g_lastError was thread_local -> WorkerLoop errors invisible to the thread calling LastError().
+  2. SslNativeStart returns 0 immediately (async worker) -> C# never sees capture/encoder init failure.
+  3. IDXGIOutput1::DuplicateOutput fails on IddCx virtual displays (DXGI_ERROR_UNSUPPORTED 0x887A0004).
+  4. No fallback / no user-visible error -> silent black screen.
+- FIX:
+  * NativeApi.cpp: g_lastError now global + std::mutex (SetLastError); added g_status atomic
+    (0 idle, 1 capturing, <0 failed) + SslNativeGetStatus(); reset status/error on Start; buffered
+    LastError() copy under lock. WorkerLoop: on capture-init failure, FALL BACK to primary display
+    (index 0) mirror so something streams + records why; sets g_status accordingly.
+  * DxgiCapture.cpp: prefer IDXGIOutput5::DuplicateOutput1 with format list (BGRA/RGBA/RGB10A2/
+    RGBA16F) for IddCx compatibility, fall back to DuplicateOutput; verify DXGI_OUTPUT_DESC
+    AttachedToDesktop + non-zero size (catches inactive "Show only on 1" head); errors include HRESULT
+    hex. DxgiCapture.h: +#include <dxgi1_5.h>.
+  * ssl_native.h: +SslNativeGetStatus. NativeInterop.cs: +SslNativeGetStatus.
+  * VideoStreamer.cs: watchdog task polls status after Start; if status<0 or FramesSent==0 (or a
+    fallback note exists) raises FatalError(realReason). SessionManager subscribes -> Diagnostics
+    .VideoStatus + Error event -> MainWindow MessageBox shows the ACTUAL reason (no more silent black).
+  * Diagnostics.cs: +VideoStatus string.
+- EXPECTED after rebuild: if DuplicateOutput1 works, Display 2 capture succeeds -> phone shows the
+  extended desktop WALLPAPER (empty desktop is normal; drag windows onto it). If capture still fails,
+  a MessageBox now shows the exact HRESULT/reason (and the phone mirrors the primary as a fallback).
+- STILL TODO (user asked): phone ROTATION detection — Android should send orientation; Windows
+  recreates/rotates the virtual display + re-negotiates W/H. Deferred until a picture renders.
+- VERIFY on user PC: Save to GitHub -> CI build -> reinstall -> run as admin -> connect phone ->
+  either wallpaper appears on the phone, OR a popup states the exact capture error to report back.

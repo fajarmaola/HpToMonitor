@@ -43,6 +43,10 @@ public static class NativeInterop
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     public static extern void SslNativeStop();
 
+    // Pipeline status: 0 = idle/starting, 1 = capturing OK, negative = init failed.
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int SslNativeGetStatus();
+
     // Query the last error string (thread-local) from the native layer.
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr SslNativeLastError();

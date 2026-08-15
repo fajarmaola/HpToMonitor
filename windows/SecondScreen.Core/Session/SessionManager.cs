@@ -202,6 +202,12 @@ public sealed class SessionManager : IDisposable
 
         // Start the encoder; frames flow to the peer once we know its video port (config ack).
         _streamer = new VideoStreamer(_transport!);
+        _streamer.FatalError += msg =>
+        {
+            Diagnostics.VideoStatus = msg;
+            Diagnostics.RaiseUpdated();
+            RaiseError($"Status video HP: {msg}");
+        };
         try
         {
             _streamer.Start(new VideoStreamConfig

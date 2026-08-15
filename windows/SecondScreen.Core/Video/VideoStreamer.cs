@@ -28,6 +28,9 @@ public sealed class VideoStreamer : IDisposable
     private long _bytesWindow;
     private DateTime _windowStart = DateTime.UtcNow;
 
+    // Raised when the native capture/encode pipeline fails to produce frames (with the real reason).
+    public event Action<string>? FatalError;
+
     public VideoStreamer(ITransport transport) => _transport = transport;
 
     public void Start(VideoStreamConfig cfg)
@@ -41,6 +44,49 @@ public sealed class VideoStreamer : IDisposable
             throw new InvalidOperationException($"Encoder start failed ({rc}): {NativeInterop.LastError()}");
         _running = true;
         Log.Info($"VideoStreamer started: output={cfg.OutputIndex} {cfg.Width}x{cfg.Height}@{cfg.Fps} {cfg.BitrateKbps}kbps hw={cfg.UseHardware}");
+
+        // The native worker inits capture+encoder asynchronously, so poll its status and surface
+        // the real error instead of silently showing a black phone with 0 bitrate.
+        StartWatchdog();
+    }
+
+    private void StartWatchdog()
+    {
+        _ = Task.Run(async () =>
+        {
+            // Give the capture+encoder init a moment to settle.
+            for (int i = 0; i < 6 && _running; i++)
+            {
+                await Task.Delay(400);
+                int status = NativeInterop.SslNativeGetStatus();
+                if (status < 0)
+                {
+                    string err = NativeInterop.LastError();
+                    Log.Error($"Video pipeline failed (status {status}): {err}");
+                    FatalError?.Invoke(err.Length > 0 ? err : $"Video pipeline error (status {status})");
+                    return;
+                }
+                if (status == 1) break; // capturing OK
+            }
+
+            // Capturing reported OK — verify frames are actually flowing.
+            if (!_running) return;
+            await Task.Delay(1500);
+            if (_running && FramesSent == 0)
+            {
+                string err = NativeInterop.LastError();
+                Log.Error($"Video pipeline sent 0 frames. {err}");
+                FatalError?.Invoke(err.Length > 0
+                    ? err
+                    : "No video frames were produced (capture returned nothing).");
+            }
+            else if (_running && NativeInterop.LastError().Length > 0)
+            {
+                // e.g. fell back to primary-display mirror — inform the user but keep streaming.
+                Log.Warn(NativeInterop.LastError());
+                FatalError?.Invoke(NativeInterop.LastError());
+            }
+        });
     }
 
     private static void OnEncodedFrame(uint frameId, ulong tsUs, int isKeyframe, IntPtr data, int len, IntPtr user)

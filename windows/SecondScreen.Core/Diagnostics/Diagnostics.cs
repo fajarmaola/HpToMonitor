@@ -20,6 +20,10 @@ public sealed class Diagnostics
     // primary display (e.g. driver missing or SwDeviceCreate denied without elevation).
     public bool UsingVirtualDisplay { get; set; }
 
+    // Last video-pipeline problem surfaced by the native capture/encoder (empty when healthy).
+    // Shown in the UI ("Cek Kesehatan") so a black screen is never a silent mystery.
+    public string VideoStatus { get; set; } = "";
+
     public event EventHandler? Updated;
     public void RaiseUpdated() => Updated?.Invoke(this, EventArgs.Empty);
 }
