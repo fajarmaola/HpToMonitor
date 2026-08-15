@@ -21,6 +21,7 @@ namespace {
     PFN_SwDeviceClose  g_pSwDeviceClose = nullptr;
     HSWDEVICE g_swDevice = nullptr;
     HANDLE    g_created = nullptr;
+    HRESULT   g_createResult = E_PENDING; // filled in by the creation callback
 
     bool LoadSwDevice() {
         if (g_pSwDeviceCreate && g_pSwDeviceClose) return true;
@@ -31,7 +32,11 @@ namespace {
         return g_pSwDeviceCreate && g_pSwDeviceClose;
     }
 
-    VOID WINAPI CreationCallback(HSWDEVICE, HRESULT, PVOID ctx, PCWSTR) {
+    // The 2nd parameter carries the REAL result of the device creation (driver started or not).
+    // We must capture it — a node can be created yet fail to start (e.g. unsigned/Code 52),
+    // in which case Windows enumerates no monitor.
+    VOID WINAPI CreationCallback(HSWDEVICE, HRESULT createResult, PVOID ctx, PCWSTR) {
+        g_createResult = createResult;
         if (ctx) SetEvent((HANDLE)ctx);
     }
 }
@@ -48,6 +53,7 @@ SSL_API int SSL_CALL SslCreateVirtualDisplay(int width, int height, int refreshH
     if (g_swDevice) return 0; // already created
     if (!LoadSwDevice()) return -1;
 
+    g_createResult = E_PENDING;
     g_created = CreateEventW(nullptr, TRUE, FALSE, nullptr);
 
     SW_DEVICE_CREATE_INFO info{};
@@ -71,9 +77,20 @@ SSL_API int SSL_CALL SslCreateVirtualDisplay(int width, int height, int refreshH
     if (FAILED(hr)) return (int)hr; // e.g. driver INF not installed
 
     // Wait until the device is created and the IddCx driver enumerates the monitor.
-    // TODO(hardware): pass width/height/refresh to the driver via a registry value or a
-    // device-interface IOCTL so the monitor advertises exactly the Android resolution.
-    WaitForSingleObject(g_created, 5000);
+    // If the wait times out, the driver never reported back — treat as failure so the host
+    // falls back to primary capture instead of pretending a Display 2 exists.
+    if (WaitForSingleObject(g_created, 10000) != WAIT_OBJECT_0) {
+        SslRemoveVirtualDisplay();
+        return (int)0x800705B4; // HRESULT_FROM_WIN32(ERROR_TIMEOUT)
+    }
+
+    // The device NODE exists, but did the IddCx driver actually START? If not (e.g. Code 52 /
+    // unsigned, Code 43 / init error), Windows shows "no other display". Surface that HRESULT.
+    if (FAILED(g_createResult)) {
+        SslRemoveVirtualDisplay();
+        return (int)g_createResult;
+    }
+
     (void)width; (void)height; (void)refreshHz;
     return 0;
 }
