@@ -276,3 +276,22 @@ created (per the user's explicit engineering rule).
   IddSampleDriver/IddSampleDriver.inf  (UmdfExtensions=IddCx0102, has DeviceGroupId).
 - VERIFY: Save to GitHub -> reinstall -> run as admin -> connect phone -> driver loads (no Code 31),
   ConnText "Layar Virtual", Display 2 appears.
+
+## Mirror/Duplicate fix: force EXTEND topology on connect — Jul 2025
+- Symptom AFTER driver loads (Display 2 exists): Windows Display Settings shows both monitors
+  collapsed into one "1|2" box set to "Duplikasikan tampilan ini" (Duplicate/mirror). Phone mirrors
+  the PC instead of being a separate desktop.
+- ROOT CAUSE: SessionManager created the IddCx virtual display but never told Windows to switch to
+  the EXTEND topology, so Windows kept the last-active topology (Duplicate) -> mirror.
+- FIX (code, needs GitHub CI rebuild):
+  * NEW windows/SecondScreen.Core/VirtualDisplay/DisplayTopology.cs — P/Invokes user32
+    SetDisplayConfig(SDC_APPLY | SDC_TOPOLOGY_EXTEND) with retry (fresh IddCx monitor needs a moment
+    to enumerate). Equivalent to Win+P -> Extend, done automatically.
+  * SessionManager.StartStreamingSession: after CreateVirtualDisplay succeeds, await
+    DisplayTopology.EnableExtendModeAsync() BEFORE computing the capture output index (so Display 2
+    is a distinct DXGI output when captured).
+  * Deliberately did NOT auto-restore internal-only on disconnect (would disable a user's real
+    external monitor). Windows collapses the layout on its own when the virtual display is removed.
+- VERIFY on user PC: Save to GitHub -> new CI build -> reinstall -> run as admin -> connect phone ->
+  Display Settings should auto-switch to "Perluas tampilan ini" (Extend), two separate boxes 1 and 2,
+  and the phone shows an empty extended desktop (drag windows onto it).

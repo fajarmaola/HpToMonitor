@@ -167,7 +167,10 @@ public sealed class SessionManager : IDisposable
         {
             if (_vdisplay.CreateVirtualDisplay(w, h, hz > 0 ? hz : 60))
             {
-                // Capture the newly-added display (typically the last output index).
+                // Force EXTEND topology so Windows treats the phone as a separate desktop instead
+                // of duplicating the primary display (the "1|2 in one box" / mirror problem).
+                await DisplayTopology.EnableExtendModeAsync();
+                // Capture the newly-added display (now a distinct output — typically the last index).
                 outputIndex = Math.Max(0, NativeSafeOutputCount() - 1);
                 usingVirtual = true;
             }
