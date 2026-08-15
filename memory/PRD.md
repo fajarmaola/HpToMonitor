@@ -418,3 +418,20 @@ created (per the user's explicit engineering rule).
   "capture returned nothing".
 - VERIFY: rebuild -> connect -> phone should finally show the desktop; BITRATE shows a number. If
   still failing, the popup will now state the precise stage/HRESULT to report back.
+
+## Progress: capture WORKS, color-conversion fails — "conv ProcessOutput" — Jul 2025
+- New precise popup: "encoder(dxgi): conv ProcessOutput" => Desktop Duplication DELIVERS frames
+  (capture + extend + driver all working!). Failure is now isolated to the BGRA->NV12 Video Processor
+  MFT at ProcessOutput.
+- ROOT CAUSE (likely): CreateColorConverter never sent MFT_MESSAGE_NOTIFY_BEGIN_STREAMING/
+  START_OF_STREAM to the VideoProcessorMFT, so the D3D-aware processor never allocated its output
+  sample pool -> first ProcessOutput fails. (The encoder MFT DID get these messages; the converter
+  was missed — an asymmetry bug.)
+- FIX (MediaFoundationH264Encoder.cpp):
+  * CreateColorConverter now sends NOTIFY_BEGIN_STREAMING + NOTIFY_START_OF_STREAM after setting types.
+  * ConvertToNv12 handles MF_E_TRANSFORM_STREAM_CHANGE (re-selects NV12 via GetOutputAvailableType +
+    retries once) and reports the exact HRESULT ("conv ProcessOutput=0x........") so any remaining
+    failure is diagnosable.
+- VERIFY: rebuild -> phone should finally show the desktop; BITRATE shows a number. If still failing,
+  the popup now includes the HRESULT (e.g. 0x80070005 access denied, 0x887A0004 unsupported) to fix
+  precisely next.

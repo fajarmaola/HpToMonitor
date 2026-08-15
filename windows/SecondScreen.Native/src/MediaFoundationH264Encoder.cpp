@@ -6,6 +6,7 @@
 #include <vector>
 #include <thread>
 #include <chrono>
+#include <cstdio>
 
 // Media Foundation H.264 encode. NOTE(hardware): this path requires a real GPU + MF stack to
 // validate end-to-end. The API usage below follows the documented MFT contract; the exact
@@ -71,6 +72,11 @@ bool MediaFoundationH264Encoder::CreateColorConverter() {
     MFSetAttributeSize(out.Get(), MF_MT_FRAME_SIZE, cfg_.width, cfg_.height);
     MFSetAttributeRatio(out.Get(), MF_MT_FRAME_RATE, cfg_.fps, 1);
     if (FAILED(converter_->SetOutputType(0, out.Get(), 0))) { lastError_ = "conv SetOutputType"; return false; }
+
+    // MUST notify streaming so the D3D-aware processor allocates its output sample pool; without
+    // this the first ProcessOutput fails ("conv ProcessOutput").
+    converter_->ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, 0);
+    converter_->ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, 0);
     return true;
 }
 
@@ -176,7 +182,22 @@ bool MediaFoundationH264Encoder::ConvertToNv12(ID3D11Texture2D* bgra, ComPtr<IMF
         odb.pSample = conv.Get();
     }
     HRESULT hr = converter_->ProcessOutput(0, 1, &odb, &status);
-    if (FAILED(hr)) { lastError_ = "conv ProcessOutput"; return false; }
+    if (hr == MF_E_TRANSFORM_STREAM_CHANGE) {
+        // The processor wants its output type (re)negotiated. Re-select NV12 and retry once.
+        ComPtr<IMFMediaType> t;
+        for (DWORD i = 0; converter_->GetOutputAvailableType(0, i, &t) == S_OK; ++i) {
+            GUID sub{}; t->GetGUID(MF_MT_SUBTYPE, &sub);
+            if (sub == MFVideoFormat_NV12) { converter_->SetOutputType(0, t.Get(), 0); break; }
+            t.Reset();
+        }
+        odb = MFT_OUTPUT_DATA_BUFFER{}; status = 0;
+        if (!providesSamples && conv) odb.pSample = conv.Get();
+        hr = converter_->ProcessOutput(0, 1, &odb, &status);
+    }
+    if (FAILED(hr)) {
+        char b[64]; snprintf(b, sizeof(b), "conv ProcessOutput=0x%08X", (unsigned)hr);
+        lastError_ = b; return false;
+    }
     outSample = odb.pSample; // if provided by MFT, take ownership
     if (providesSamples && odb.pSample) odb.pSample->Release() /* balanced by ComPtr assign */;
     outSample->SetSampleTime((LONGLONG)(tsUs * 10));
