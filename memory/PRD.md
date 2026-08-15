@@ -295,3 +295,26 @@ created (per the user's explicit engineering rule).
 - VERIFY on user PC: Save to GitHub -> new CI build -> reinstall -> run as admin -> connect phone ->
   Display Settings should auto-switch to "Perluas tampilan ini" (Extend), two separate boxes 1 and 2,
   and the phone shows an empty extended desktop (drag windows onto it).
+
+## Extend fix v2: virtual head stayed INACTIVE ("Show only on 1") — Jul 2025
+- Symptom after extend fix v1: Display Settings now shows TWO separate boxes (1 and 2) but mode is
+  "Hanya tampilkan di 1" (Show only on 1). Display 2 exists but is NOT active -> phone shows nothing,
+  desktop can't spill onto it.
+- ROOT CAUSE: SetDisplayConfig(SDC_TOPOLOGY_EXTEND) returned ERROR_SUCCESS immediately, before the
+  freshly-created IddCx monitor finished enumerating, so Windows extended only across the displays
+  ready at that instant and left the new virtual head inactive. (DXGI GetOutputCount then = 1 ->
+  capture grabbed Display 1 / failed -> phone blank.)
+- FIX (rewrote windows/SecondScreen.Core/VirtualDisplay/DisplayTopology.cs):
+  * Full CCD supplied-config: GetDisplayConfigBufferSizes + QueryDisplayConfig(QDC_ALL_PATHS), find
+    each inactive-but-available path (targetAvailable && id!=0 = the virtual head), mark it
+    DISPLAYCONFIG_PATH_ACTIVE with invalid mode indices, then SetDisplayConfig with
+    SDC_APPLY|SDC_USE_SUPPLIED_DISPLAY_CONFIG|SDC_ALLOW_CHANGES|SDC_SAVE_TO_DATABASE.
+  * Retries up to 20x300ms until the virtual head appears (NotReady) and activation succeeds.
+  * Falls back to SDC_TOPOLOGY_EXTEND shortcut only as a last resort.
+  * Note: activates ALL available inactive heads (could switch on a user's detached real monitor too;
+    acceptable trade-off). Verified struct sizes: PATH_INFO=72B, MODE_INFO=64B.
+- Once Display 2 is active, DXGI GetOutputCount=2 -> SessionManager captures output index 1 (the
+  virtual head) via existing cross-adapter ResolveOutput; no native change needed.
+- VERIFY on user PC: Save to GitHub -> CI build -> reinstall -> run as admin -> connect phone ->
+  Display Settings should read "Perluas tampilan ini" with box 2 ACTIVE; phone shows an empty
+  extended desktop you can drag windows onto.
