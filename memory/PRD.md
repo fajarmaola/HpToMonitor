@@ -245,3 +245,17 @@ created (per the user's explicit engineering rule).
   packages.config (no hardcoded WDK version in workflows).
 - VERIFY on user PC: Save to GitHub -> new CI build (26100 WDK) -> reinstall -> run as admin ->
   connect phone -> device should load without Code 31 and ConnText should show "Layar Virtual".
+
+## CI fix: pin windows-2022 runner (VS2026 vs WDK toolchain mismatch) — Jun 2026
+- After pinning WDK to stable 26100.4204, CI build FAILED with MSB4062: "ValidateNTTargetVersion task
+  could not be loaded from ...Microsoft.DriverKit.Build.Tasks.18.0.dll ... file not found".
+- CAUSE: GitHub migrated windows-latest/windows-2025 to Visual Studio 2026 (MSBuild 18) in June 2026.
+  MSBuild 18 looks for the WDK task DLL "...Tasks.18.0.dll", which ONLY ships in the VS2026-era
+  WDK 28000. The stable 24H2 WDK 26100 ships "...Tasks.17.0.dll" (VS2022 / MSBuild 17).
+  So WDK 26100 (needed to avoid Code 31 on 24H2) is incompatible with the VS2026 runner.
+- FIX: pinned the `windows` job in BOTH .github/workflows/release.yml and windows.yml to
+  `runs-on: windows-2022` (VS2022 / MSBuild 17). This matches WDK 26100 tasks AND targets 24H2 so the
+  driver loads on the user's Build 26100 PC. windows-2022 is still an available hosted image (Jun 2026).
+- NOTE for future: if windows-2022 is retired, either (a) install VS2022 build tools on windows-2025,
+  or (b) move to WDK 28000 + VS2026 but ALSO set WindowsTargetPlatformVersion to a 26100 SDK so the
+  driver still targets 24H2 (avoids Code 31).

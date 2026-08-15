@@ -14,7 +14,11 @@ permissions:
 jobs:
   windows:
     name: Windows installer (app + driver)
-    runs-on: windows-latest
+    # Pinned to windows-2022 (Visual Studio 2022 / MSBuild 17). windows-latest migrated to VS2026
+    # (MSBuild 18) in June 2026, whose build tasks expect Microsoft.DriverKit.Build.Tasks.18.0.dll —
+    # only shipped by the VS2026-era WDK 28000. We must use the stable 24H2 WDK 26100 (so the driver
+    # LOADS on the user's 24H2 PC without Code 31), and that WDK ships the 17.0 task = needs VS2022.
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
       - name: Set up .NET 8

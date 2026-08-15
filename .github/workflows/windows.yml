@@ -10,7 +10,9 @@ on:
 jobs:
   windows:
     name: Build single installer (app + driver)
-    runs-on: windows-latest
+    # Pinned to windows-2022 (VS2022 / MSBuild 17) to match the stable 24H2 WDK 26100 build tasks.
+    # See release.yml for the full rationale (VS2026 needs WDK 28000 which breaks 24H2 load / Code 31).
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
 
