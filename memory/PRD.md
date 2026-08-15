@@ -364,3 +364,22 @@ created (per the user's explicit engineering rule).
 - VERIFY: rebuild -> app footer version must change; phone should show the desktop wallpaper even when
   idle. If version DID change but phone still black -> code issue (report popup text). If version did
   NOT change -> deploy issue (Save-to-GitHub / release / download of installer).
+
+## THE fix for "No video frames" (black phone): GDI fallback capture — Jul 2025
+- CONFIRMED via popup "Status video HP: No video frames were produced (capture returned nothing)":
+  new build IS running (deploy OK). Capture init succeeded (status=1) but Desktop Duplication
+  delivered ZERO frames -> phone black.
+- ROOT CAUSE: IDXGIOutputDuplication only yields a frame on a screen CHANGE. A static/empty EXTENDED
+  Display 2 never presents (not even the first frame), so AcquireNextFrame times out forever.
+- FIX (NativeApi.cpp WorkerLoop + DxgiCapture Left/Top):
+  * Added GdiGrab(): BitBlt of the display's virtual-screen rect (left/top/w/h) into a BGRA
+    D3D11 texture (SRCCOPY|CAPTUREBLT, top-down GetDIBits, CreateTexture2D w/ initial data).
+  * Loop: Desktop Duplication = fast path for motion; when no duplication frame for >=200ms, GDI-grab
+    the current screen and encode it as a keyframe. This bootstraps frame #1 AND keeps a static/idle
+    extended desktop visible + recovers from UDP loss.
+  * DxgiCapture now exposes Left()/Top() (from DXGI_OUTPUT_DESC.DesktopCoordinates) for the GDI rect.
+  * Added <windows.h>,<vector> to NativeApi.cpp.
+- Trade-off: GDI may render some hardware-accelerated/protected windows as black, but wallpaper +
+  normal windows show fine; motion still uses fast Duplication path.
+- VERIFY: rebuild -> connect phone -> phone shows the extended desktop wallpaper; drag a window onto
+  Display 2 -> it appears on the phone. BITRATE should now show a real number (not "—").

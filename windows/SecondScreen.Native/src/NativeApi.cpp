@@ -3,12 +3,14 @@
 #include "ssl_native.h"
 #include "DxgiCapture.h"
 #include "MediaFoundationH264Encoder.h"
+#include <windows.h>
 #include <thread>
 #include <atomic>
 #include <mutex>
 #include <chrono>
 #include <string>
 #include <cstring>
+#include <vector>
 #include <combaseapi.h>
 
 using namespace ssl;
@@ -33,6 +35,50 @@ namespace {
     uint64_t NowUs() {
         using namespace std::chrono;
         return duration_cast<microseconds>(steady_clock::now().time_since_epoch()).count();
+    }
+
+    // Capture a screen region via GDI (BitBlt) into a BGRA D3D11 texture. Unlike Desktop
+    // Duplication, GDI can grab a STATIC screen at any time, so it bootstraps the first frame and
+    // keeps an idle/empty extended display visible on the phone. Slower, used only when duplication
+    // reports no change. Returns false on failure.
+    bool GdiGrab(ID3D11Device* dev, int left, int top, int w, int h,
+                 Microsoft::WRL::ComPtr<ID3D11Texture2D>& out) {
+        if (!dev || w <= 0 || h <= 0) return false;
+        HDC screen = GetDC(nullptr);
+        if (!screen) return false;
+        HDC mem = CreateCompatibleDC(screen);
+        HBITMAP bmp = CreateCompatibleBitmap(screen, w, h);
+        HGDIOBJ oldObj = SelectObject(mem, bmp);
+        bool ok = BitBlt(mem, 0, 0, w, h, screen, left, top, SRCCOPY | CAPTUREBLT) != FALSE;
+
+        std::vector<uint8_t> pixels;
+        if (ok) {
+            BITMAPINFO bi{};
+            bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+            bi.bmiHeader.biWidth = w;
+            bi.bmiHeader.biHeight = -h;            // negative = top-down rows
+            bi.bmiHeader.biPlanes = 1;
+            bi.bmiHeader.biBitCount = 32;          // BGRA (matches encoder ARGB32 input)
+            bi.bmiHeader.biCompression = BI_RGB;
+            pixels.resize((size_t)w * (size_t)h * 4);
+            ok = GetDIBits(mem, bmp, 0, (UINT)h, pixels.data(), &bi, DIB_RGB_COLORS) != 0;
+        }
+        SelectObject(mem, oldObj);
+        DeleteObject(bmp);
+        DeleteDC(mem);
+        ReleaseDC(nullptr, screen);
+        if (!ok) return false;
+
+        D3D11_TEXTURE2D_DESC d{};
+        d.Width = (UINT)w; d.Height = (UINT)h; d.MipLevels = 1; d.ArraySize = 1;
+        d.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+        d.SampleDesc.Count = 1;
+        d.Usage = D3D11_USAGE_DEFAULT;
+        d.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        D3D11_SUBRESOURCE_DATA init{};
+        init.pSysMem = pixels.data();
+        init.SysMemPitch = (UINT)w * 4;
+        return SUCCEEDED(dev->CreateTexture2D(&d, &init, out.GetAddressOf()));
     }
 
     void WorkerLoop(int outputIndex, EncoderConfig cfg) {
@@ -65,10 +111,8 @@ namespace {
         });
         g_status = 1; // capture + encoder initialized; frames should now flow
 
-        Microsoft::WRL::ComPtr<ID3D11Texture2D> lastFrame;   // persistent copy for idle refresh
-        Microsoft::WRL::ComPtr<ID3D11DeviceContext> ctx;
-        if (g_capture.Device()) g_capture.Device()->GetImmediateContext(&ctx);
-        bool haveFrame = false;
+        const int left = g_capture.Left(), top = g_capture.Top();
+        const int gw = g_capture.Width(), gh = g_capture.Height();
         auto lastEncode = std::chrono::steady_clock::now() - std::chrono::seconds(1);
         g_encoder.RequestKeyframe(); // make the very first encoded frame an IDR
 
@@ -79,40 +123,31 @@ namespace {
             Microsoft::WRL::ComPtr<ID3D11Texture2D> tex;
             int r = g_capture.AcquireFrame(tex, 8);
             if (r == 1 && tex) {
-                // Keep a persistent copy so a static screen can still be re-sent to the phone.
-                if (ctx && g_capture.Device()) {
-                    if (!lastFrame) {
-                        D3D11_TEXTURE2D_DESC d{}; tex->GetDesc(&d);
-                        d.Usage = D3D11_USAGE_DEFAULT; d.CPUAccessFlags = 0; d.MiscFlags = 0;
-                        d.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-                        g_capture.Device()->CreateTexture2D(&d, nullptr, &lastFrame);
-                    }
-                    if (lastFrame) ctx->CopyResource(lastFrame.Get(), tex.Get());
-                }
+                // Fast path: real screen change captured via Desktop Duplication (motion/video).
                 g_encoder.EncodeFrame(tex.Get(), NowUs());
                 g_capture.ReleaseFrame();
-                haveFrame = true;
                 lastEncode = std::chrono::steady_clock::now();
             } else if (r < 0) {
                 // Access lost (resolution change / mode switch). Reinitialize + refresh keyframe.
                 g_capture.Shutdown();
-                lastFrame.Reset(); ctx.Reset(); haveFrame = false;
                 if (g_capture.Initialize(outputIndex)) {
-                    if (g_capture.Device()) g_capture.Device()->GetImmediateContext(&ctx);
                     g_encoder.RequestKeyframe();
                 } else {
                     std::this_thread::sleep_for(std::chrono::milliseconds(200));
                 }
-            } else if (haveFrame && lastFrame) {
-                // Static/empty extended desktop produces no new duplication frames. Periodically
-                // re-encode the last image as a keyframe so the phone still shows the desktop and
-                // recovers from UDP packet loss (otherwise the screen stays black).
+            } else {
+                // No new duplication frame. A static/empty extended desktop NEVER presents (not even
+                // the first frame), so grab it with GDI so the phone always shows current content.
+                // This also bootstraps frame #1 and lets UDP loss recover via periodic keyframes.
                 auto sinceMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::steady_clock::now() - lastEncode).count();
-                if (sinceMs >= 250) {
-                    g_encoder.RequestKeyframe();
-                    g_encoder.EncodeFrame(lastFrame.Get(), NowUs());
-                    lastEncode = std::chrono::steady_clock::now();
+                if (sinceMs >= 200) {
+                    Microsoft::WRL::ComPtr<ID3D11Texture2D> gtex;
+                    if (GdiGrab(g_capture.Device(), left, top, gw, gh, gtex) && gtex) {
+                        g_encoder.RequestKeyframe();
+                        g_encoder.EncodeFrame(gtex.Get(), NowUs());
+                        lastEncode = std::chrono::steady_clock::now();
+                    }
                 }
             }
 

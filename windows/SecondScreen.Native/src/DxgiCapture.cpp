@@ -71,6 +71,8 @@ bool DxgiCapture::Initialize(int outputIndex) {
     output1->GetDesc(&desc);
     width_  = desc.DesktopCoordinates.right - desc.DesktopCoordinates.left;
     height_ = desc.DesktopCoordinates.bottom - desc.DesktopCoordinates.top;
+    left_   = desc.DesktopCoordinates.left;
+    top_    = desc.DesktopCoordinates.top;
     if (!desc.AttachedToDesktop || width_ <= 0 || height_ <= 0) {
         lastError_ = "output " + std::to_string(outputIndex) +
                      " is not attached to the desktop (inactive display — 'Show only on 1'?)";

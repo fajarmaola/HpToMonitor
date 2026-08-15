@@ -25,6 +25,8 @@ public:
     ID3D11Device* Device() const { return device_.Get(); }
     int Width() const { return width_; }
     int Height() const { return height_; }
+    int Left() const { return left_; }
+    int Top() const { return top_; }
     static int GetOutputCount();
     const std::string& LastError() const { return lastError_; }
 
@@ -36,6 +38,7 @@ private:
     ComPtr<IDXGIOutputDuplication> duplication_;
     ComPtr<ID3D11Texture2D> acquired_;
     int width_ = 0, height_ = 0;
+    int left_ = 0, top_ = 0;
     int outputIndex_ = 0;
     bool frameHeld_ = false;
     std::string lastError_;
