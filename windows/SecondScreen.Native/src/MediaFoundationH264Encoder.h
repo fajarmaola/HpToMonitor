@@ -8,6 +8,7 @@
 #include <wrl/client.h>
 #include <atomic>
 #include <string>
+#include <vector>
 
 namespace ssl {
 
@@ -32,6 +33,7 @@ private:
     bool DrainEncoder(uint32_t frameId);          // synchronous MFT: pull all ready output
     int  PullOutput(uint32_t frameId);            // deliver one encoded sample: 1=got, 0=need input, -1=err
     bool EncodeAsync(IMFSample* nv12, uint32_t frameId); // async (hardware) MFT event model
+    IMFSample* NextNv12Sample();       // pooled D3D11 NV12 output sample for the Video Processor
     void ApplyBitrate();
 
     ComPtr<ID3D11Device> device_;
@@ -49,6 +51,8 @@ private:
     uint32_t frameCounter_ = 0;
     std::string lastError_;
     LONGLONG sampleDuration_ = 0;
+    std::vector<ComPtr<IMFSample>> nv12Pool_;  // ring of D3D NV12 output samples for the converter
+    size_t nv12Idx_ = 0;
 };
 
 } // namespace ssl

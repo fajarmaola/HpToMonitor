@@ -435,3 +435,16 @@ created (per the user's explicit engineering rule).
 - VERIFY: rebuild -> phone should finally show the desktop; BITRATE shows a number. If still failing,
   the popup now includes the HRESULT (e.g. 0x80070005 access denied, 0x887A0004 unsupported) to fix
   precisely next.
+
+## conv ProcessOutput = 0x887A0001 (DXGI_ERROR_INVALID_CALL) fix — Jul 2025
+- Precise popup now: "encoder(dxgi): conv ProcessOutput=0x887A0001". 0x887A0001 = DXGI_ERROR_INVALID_CALL.
+- ROOT CAUSE: the D3D11-aware Video Processor MFT does NOT allocate its own output samples here, so it
+  needs a D3D11 NV12 TEXTURE-backed output sample. The code supplied a SYSTEM-MEMORY buffer
+  (MFCreateMemoryBuffer) -> DXGI_ERROR_INVALID_CALL.
+- FIX (MediaFoundationH264Encoder): added NextNv12Sample() — a ring pool of 6 D3D11 NV12 textures
+  (DXGI_FORMAT_NV12, BIND_RENDER_TARGET|SHADER_RESOURCE) wrapped as IMFSamples. ConvertToNv12 now
+  supplies a pooled D3D NV12 sample as the ProcessOutput target when the MFT doesn't provide samples.
+  Pool (not a single texture) avoids a zero-copy race with the async hardware encoder. Pool cleared in
+  Shutdown. STREAM_CHANGE retry + HRESULT reporting retained.
+- VERIFY: rebuild -> phone should show the desktop; BITRATE shows a number. If it still fails the popup
+  gives the next HRESULT to chase.

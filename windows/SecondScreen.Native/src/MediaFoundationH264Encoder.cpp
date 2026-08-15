@@ -168,19 +168,20 @@ bool MediaFoundationH264Encoder::ConvertToNv12(ID3D11Texture2D* bgra, ComPtr<IMF
 
     MFT_OUTPUT_STREAM_INFO si{};
     converter_->GetOutputStreamInfo(0, &si);
-    // Let the MFT allocate the NV12 output sample (D3D-aware processor provides one).
-    MFT_OUTPUT_DATA_BUFFER odb{};
-    DWORD status = 0;
-    ComPtr<IMFSample> conv;
     bool providesSamples = (si.dwFlags & (MFT_OUTPUT_STREAM_PROVIDES_SAMPLES |
                                           MFT_OUTPUT_STREAM_CAN_PROVIDE_SAMPLES)) != 0;
+    // A D3D11-aware Video Processor that does NOT allocate its own samples requires a D3D11 NV12
+    // TEXTURE-backed output sample; passing a system-memory buffer fails with DXGI_ERROR_INVALID_CALL
+    // (0x887A0001). Provide a pooled NV12 D3D texture (pool avoids a race with the async encoder).
+    IMFSample* outBuf = nullptr;
     if (!providesSamples) {
-        MFCreateSample(&conv);
-        ComPtr<IMFMediaBuffer> b;
-        MFCreateMemoryBuffer(si.cbSize ? si.cbSize : cfg_.width * cfg_.height * 3 / 2, &b);
-        conv->AddBuffer(b.Get());
-        odb.pSample = conv.Get();
+        outBuf = NextNv12Sample();
+        if (!outBuf) { lastError_ = "alloc NV12 D3D sample failed"; return false; }
     }
+    MFT_OUTPUT_DATA_BUFFER odb{};
+    DWORD status = 0;
+    odb.pSample = outBuf;
+
     HRESULT hr = converter_->ProcessOutput(0, 1, &odb, &status);
     if (hr == MF_E_TRANSFORM_STREAM_CHANGE) {
         // The processor wants its output type (re)negotiated. Re-select NV12 and retry once.
@@ -191,18 +192,45 @@ bool MediaFoundationH264Encoder::ConvertToNv12(ID3D11Texture2D* bgra, ComPtr<IMF
             t.Reset();
         }
         odb = MFT_OUTPUT_DATA_BUFFER{}; status = 0;
-        if (!providesSamples && conv) odb.pSample = conv.Get();
+        odb.pSample = outBuf;
         hr = converter_->ProcessOutput(0, 1, &odb, &status);
     }
     if (FAILED(hr)) {
         char b[64]; snprintf(b, sizeof(b), "conv ProcessOutput=0x%08X", (unsigned)hr);
         lastError_ = b; return false;
     }
-    outSample = odb.pSample; // if provided by MFT, take ownership
+    outSample = odb.pSample; // MFT-provided sample (providesSamples) or our pooled NV12 sample
     if (providesSamples && odb.pSample) odb.pSample->Release() /* balanced by ComPtr assign */;
     outSample->SetSampleTime((LONGLONG)(tsUs * 10));
     outSample->SetSampleDuration(sampleDuration_);
     return true;
+}
+
+// Returns one of a small ring of D3D11 NV12 texture-backed output samples for the Video Processor.
+// The pool prevents the (zero-copy) async encoder from reading a buffer we are about to overwrite.
+IMFSample* MediaFoundationH264Encoder::NextNv12Sample() {
+    if (nv12Pool_.empty()) {
+        for (int i = 0; i < 6; ++i) {
+            D3D11_TEXTURE2D_DESC d{};
+            d.Width = (UINT)cfg_.width; d.Height = (UINT)cfg_.height;
+            d.MipLevels = 1; d.ArraySize = 1;
+            d.Format = DXGI_FORMAT_NV12; d.SampleDesc.Count = 1;
+            d.Usage = D3D11_USAGE_DEFAULT;
+            d.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+            ComPtr<ID3D11Texture2D> tex;
+            if (FAILED(device_->CreateTexture2D(&d, nullptr, tex.GetAddressOf()))) return nullptr;
+            ComPtr<IMFMediaBuffer> buf;
+            if (FAILED(MFCreateDXGISurfaceBuffer(__uuidof(ID3D11Texture2D), tex.Get(), 0, FALSE, &buf)))
+                return nullptr;
+            ComPtr<IMFSample> s;
+            MFCreateSample(&s);
+            s->AddBuffer(buf.Get());
+            nv12Pool_.push_back(s);
+        }
+    }
+    IMFSample* s = nv12Pool_[nv12Idx_ % nv12Pool_.size()].Get();
+    ++nv12Idx_;
+    return s;
 }
 
 bool MediaFoundationH264Encoder::EncodeFrame(ID3D11Texture2D* frame, uint64_t tsUs) {
@@ -328,6 +356,10 @@ void MediaFoundationH264Encoder::Shutdown() {
     }
     encoder_.Reset();
     converter_.Reset();
+    encoderEvents_.Reset();
+    nv12Pool_.clear();
+    nv12Idx_ = 0;
+    async_ = false;
     dxgiManager_.Reset();
     MFShutdown();
 }
