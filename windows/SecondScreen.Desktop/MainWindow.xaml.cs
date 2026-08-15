@@ -16,6 +16,12 @@ public partial class MainWindow : Window
             LogText.Text = $"[{e.level}] {e.message}");
         Loc.Changed += ApplyLanguage;
         ApplyLanguage();
+
+        // Show the build version prominently so it's obvious whether a fresh build is installed
+        // (if this number does not change after "Save to GitHub" + reinstall, the new build did
+        // not reach this PC — an install/deploy issue, not a code issue).
+        var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+        FooterText.Text = $"PT Teleraya Digital Group  •  Versi {v?.ToString() ?? "?"}";
     }
 
     // ---- Localization ---------------------------------------------------------------------

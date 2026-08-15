@@ -349,3 +349,18 @@ created (per the user's explicit engineering rule).
   recreates/rotates the virtual display + re-negotiates W/H. Deferred until a picture renders.
 - VERIFY on user PC: Save to GitHub -> CI build -> reinstall -> run as admin -> connect phone ->
   either wallpaper appears on the phone, OR a popup states the exact capture error to report back.
+
+## Static-screen black fix + visible version label — Jul 2025
+- User reports "no change at all" across rebuilds (not even the new error popup). Two-pronged fix:
+  1) VISIBLE VERSION: MainWindow footer now shows "Versi {AssemblyVersion}" (CI sets Version=VERSION.
+     run_number). If this number does NOT change after Save to GitHub + reinstall, the new build is
+     NOT reaching the PC (install/deploy issue), not a code bug. FooterText named in MainWindow.xaml,
+     set in ctor from Assembly.GetName().Version.
+  2) STATIC-SCREEN BLACK: DXGI Desktop Duplication only yields a frame on screen CHANGE, so an empty/
+     idle extended Display 2 produced ZERO frames -> phone black; UDP keyframe loss never recovered.
+     NativeApi.cpp WorkerLoop now: forces an initial IDR; keeps a persistent CopyResource of the last
+     frame; when idle (no new frame) re-encodes that copy as a keyframe every 250ms so the desktop
+     always shows and UDP loss self-heals. On access-lost, resets the copy + forces keyframe.
+- VERIFY: rebuild -> app footer version must change; phone should show the desktop wallpaper even when
+  idle. If version DID change but phone still black -> code issue (report popup text). If version did
+  NOT change -> deploy issue (Save-to-GitHub / release / download of installer).

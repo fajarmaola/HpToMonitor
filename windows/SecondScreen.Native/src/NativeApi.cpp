@@ -65,6 +65,13 @@ namespace {
         });
         g_status = 1; // capture + encoder initialized; frames should now flow
 
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> lastFrame;   // persistent copy for idle refresh
+        Microsoft::WRL::ComPtr<ID3D11DeviceContext> ctx;
+        if (g_capture.Device()) g_capture.Device()->GetImmediateContext(&ctx);
+        bool haveFrame = false;
+        auto lastEncode = std::chrono::steady_clock::now() - std::chrono::seconds(1);
+        g_encoder.RequestKeyframe(); // make the very first encoded frame an IDR
+
         while (g_running) {
             int targetFps = g_fps.load();
             auto frameStart = std::chrono::steady_clock::now();
@@ -72,13 +79,40 @@ namespace {
             Microsoft::WRL::ComPtr<ID3D11Texture2D> tex;
             int r = g_capture.AcquireFrame(tex, 8);
             if (r == 1 && tex) {
+                // Keep a persistent copy so a static screen can still be re-sent to the phone.
+                if (ctx && g_capture.Device()) {
+                    if (!lastFrame) {
+                        D3D11_TEXTURE2D_DESC d{}; tex->GetDesc(&d);
+                        d.Usage = D3D11_USAGE_DEFAULT; d.CPUAccessFlags = 0; d.MiscFlags = 0;
+                        d.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+                        g_capture.Device()->CreateTexture2D(&d, nullptr, &lastFrame);
+                    }
+                    if (lastFrame) ctx->CopyResource(lastFrame.Get(), tex.Get());
+                }
                 g_encoder.EncodeFrame(tex.Get(), NowUs());
                 g_capture.ReleaseFrame();
+                haveFrame = true;
+                lastEncode = std::chrono::steady_clock::now();
             } else if (r < 0) {
-                // Access lost (e.g. resolution change / mode switch). Reinitialize.
+                // Access lost (resolution change / mode switch). Reinitialize + refresh keyframe.
                 g_capture.Shutdown();
-                if (!g_capture.Initialize(outputIndex)) {
+                lastFrame.Reset(); ctx.Reset(); haveFrame = false;
+                if (g_capture.Initialize(outputIndex)) {
+                    if (g_capture.Device()) g_capture.Device()->GetImmediateContext(&ctx);
+                    g_encoder.RequestKeyframe();
+                } else {
                     std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                }
+            } else if (haveFrame && lastFrame) {
+                // Static/empty extended desktop produces no new duplication frames. Periodically
+                // re-encode the last image as a keyframe so the phone still shows the desktop and
+                // recovers from UDP packet loss (otherwise the screen stays black).
+                auto sinceMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - lastEncode).count();
+                if (sinceMs >= 250) {
+                    g_encoder.RequestKeyframe();
+                    g_encoder.EncodeFrame(lastFrame.Get(), NowUs());
+                    lastEncode = std::chrono::steady_clock::now();
                 }
             }
 
