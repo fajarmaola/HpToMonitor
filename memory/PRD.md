@@ -400,3 +400,21 @@ created (per the user's explicit engineering rule).
 - Clickable link: MainWindow.xaml footer is now a TextBlock with a <Hyperlink> to
   https://company.teleraya.com (RequestNavigate -> Process.Start ShellExecute) + a VersionRun showing
   "Versi {AssemblyVersion}". Replaces the old FooterText.
+
+## LIKELY real root cause of black phone: async hardware H.264 MFT driven synchronously — Jul 2025
+- Popup still "No video frames were produced" with HW encoder checkbox ON. Capture inits (status=1)
+  but 0 frames reach the phone.
+- ROOT CAUSE (high confidence): hardware H.264 MFTs are ASYNCHRONOUS (MF_TRANSFORM_ASYNC). The code
+  drove the encoder with plain ProcessInput/ProcessOutput (sync model). An unlocked async MFT driven
+  synchronously accepts nothing / emits nothing -> 0 output -> black.
+- FIX (MediaFoundationH264Encoder): detect MF_TRANSFORM_ASYNC at CreateEncoder; if async, unlock it
+  and grab IMFMediaEventGenerator. New EncodeAsync() pumps the event model: wait METransformNeedInput
+  -> ProcessInput; drain METransformHaveOutput -> PullOutput (NO_WAIT, 1s bootstrap deadline).
+  Refactored the old DrainEncoder into PullOutput() (1=got/0=need-input/-1=err) shared by both paths.
+  Sync (software) MFTs still use ProcessInput + DrainEncoder.
+- Also added pinpoint diagnostics in NativeApi.cpp WorkerLoop: counts encoder inputs vs outputs and
+  sets a precise LastError ("GDI capture failed ...", "encoder(gdi|dxgi): ...", or "Encoder menerima
+  N frame tetapi output H.264=0 ...") so the popup names the exact failing stage instead of a generic
+  "capture returned nothing".
+- VERIFY: rebuild -> connect -> phone should finally show the desktop; BITRATE shows a number. If
+  still failing, the popup will now state the precise stage/HRESULT to report back.

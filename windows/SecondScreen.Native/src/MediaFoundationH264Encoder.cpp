@@ -4,6 +4,8 @@
 #include <codecapi.h>
 #include <wmcodecdsp.h>   // CLSID_VideoProcessorMFT
 #include <vector>
+#include <thread>
+#include <chrono>
 
 // Media Foundation H.264 encode. NOTE(hardware): this path requires a real GPU + MF stack to
 // validate end-to-end. The API usage below follows the documented MFT contract; the exact
@@ -91,10 +93,16 @@ bool MediaFoundationH264Encoder::CreateEncoder(bool hardware) {
 
     ComPtr<IMFAttributes> attrs;
     if (SUCCEEDED(encoder_->GetAttributes(&attrs))) {
-        attrs->SetUINT32(MF_TRANSFORM_ASYNC_UNLOCK, TRUE); // harmless for sync MFTs
+        UINT32 isAsync = 0;
+        attrs->GetUINT32(MF_TRANSFORM_ASYNC, &isAsync);
+        async_ = isAsync != 0;
+        if (async_) attrs->SetUINT32(MF_TRANSFORM_ASYNC_UNLOCK, TRUE); // required before use
         if (hardware)
             encoder_->ProcessMessage(MFT_MESSAGE_SET_D3D_MANAGER,
                 reinterpret_cast<ULONG_PTR>(dxgiManager_.Get()));
+    }
+    if (async_ && FAILED(encoder_.As(&encoderEvents_))) {
+        lastError_ = "async encoder MFT has no IMFMediaEventGenerator"; return false;
     }
 
     // Output type must be set before input type for encoders.
@@ -191,49 +199,90 @@ bool MediaFoundationH264Encoder::EncodeFrame(ID3D11Texture2D* frame, uint64_t ts
         }
     }
 
+    // Hardware encoders are usually ASYNC MFTs: driving them with plain ProcessInput/ProcessOutput
+    // yields NO output (black phone). They must be pumped via METransformNeedInput/HaveOutput events.
+    if (async_) return EncodeAsync(nv12.Get(), frameCounter_++);
+
     HRESULT hr = encoder_->ProcessInput(0, nv12.Get(), 0);
     if (hr == MF_E_NOTACCEPTING) { DrainEncoder(frameCounter_); hr = encoder_->ProcessInput(0, nv12.Get(), 0); }
     if (FAILED(hr)) { lastError_ = "enc ProcessInput"; return false; }
     return DrainEncoder(frameCounter_++);
 }
 
-bool MediaFoundationH264Encoder::DrainEncoder(uint32_t frameId) {
-    for (;;) {
-        MFT_OUTPUT_STREAM_INFO si{};
-        encoder_->GetOutputStreamInfo(0, &si);
-
-        MFT_OUTPUT_DATA_BUFFER odb{};
-        DWORD status = 0;
-        ComPtr<IMFSample> outSample;
-        bool provides = (si.dwFlags & (MFT_OUTPUT_STREAM_PROVIDES_SAMPLES |
-                                       MFT_OUTPUT_STREAM_CAN_PROVIDE_SAMPLES)) != 0;
-        if (!provides) {
-            MFCreateSample(&outSample);
-            ComPtr<IMFMediaBuffer> b;
-            MFCreateMemoryBuffer(si.cbSize ? si.cbSize : (1 << 20), &b);
-            outSample->AddBuffer(b.Get());
-            odb.pSample = outSample.Get();
+// Async (hardware) MFT event pump: feed one input when the MFT asks, then drain ready output.
+bool MediaFoundationH264Encoder::EncodeAsync(IMFSample* nv12, uint32_t frameId) {
+    using namespace std::chrono;
+    auto deadline = steady_clock::now() + milliseconds(1000);
+    bool fed = false;
+    while (!fed && steady_clock::now() < deadline) {
+        ComPtr<IMFMediaEvent> ev;
+        HRESULT hr = encoderEvents_->GetEvent(MF_EVENT_FLAG_NO_WAIT, &ev);
+        if (hr == MF_E_NO_EVENTS_AVAILABLE) { std::this_thread::sleep_for(milliseconds(1)); continue; }
+        if (FAILED(hr)) { lastError_ = "async GetEvent"; return false; }
+        MediaEventType met = 0; ev->GetType(&met);
+        if (met == METransformNeedInput) {
+            if (FAILED(encoder_->ProcessInput(0, nv12, 0))) { lastError_ = "async ProcessInput"; return false; }
+            fed = true;
+        } else if (met == METransformHaveOutput) {
+            if (PullOutput(frameId) < 0) return false;
         }
-        HRESULT hr = encoder_->ProcessOutput(0, 1, &odb, &status);
-        if (hr == MF_E_TRANSFORM_NEED_MORE_INPUT) return true;
-        if (FAILED(hr)) { lastError_ = "enc ProcessOutput"; return false; }
-
-        ComPtr<IMFSample> got = odb.pSample;
-        if (provides && odb.pSample) odb.pSample->Release();
-
-        UINT32 clean = 0;
-        got->GetUINT32(MFSampleExtension_CleanPoint, &clean);
-        bool keyframe = clean != 0;
-
-        ComPtr<IMFMediaBuffer> buf;
-        got->ConvertToContiguousBuffer(&buf);
-        BYTE* data = nullptr; DWORD maxLen = 0, curLen = 0;
-        buf->Lock(&data, &maxLen, &curLen);
-        LONGLONG st = 0; got->GetSampleTime(&st);
-        if (cb_ && curLen > 0)
-            cb_(frameId, (uint64_t)(st / 10), keyframe, data, (int)curLen);
-        buf->Unlock();
     }
+    if (!fed) { lastError_ = "async encoder sent no METransformNeedInput within 1s"; return false; }
+
+    // Collect any immediately-available encoded output (low latency); leftover is caught next frame.
+    for (int i = 0; i < 8; ++i) {
+        ComPtr<IMFMediaEvent> ev;
+        HRESULT hr = encoderEvents_->GetEvent(MF_EVENT_FLAG_NO_WAIT, &ev);
+        if (hr == MF_E_NO_EVENTS_AVAILABLE || FAILED(hr)) break;
+        MediaEventType met = 0; ev->GetType(&met);
+        if (met == METransformHaveOutput) { if (PullOutput(frameId) < 0) return false; }
+    }
+    return true;
+}
+
+bool MediaFoundationH264Encoder::DrainEncoder(uint32_t frameId) {
+    int r;
+    do { r = PullOutput(frameId); } while (r == 1);
+    return r >= 0;
+}
+
+// Pull one encoded access unit and deliver it. Returns 1 = delivered, 0 = need more input, -1 = error.
+int MediaFoundationH264Encoder::PullOutput(uint32_t frameId) {
+    MFT_OUTPUT_STREAM_INFO si{};
+    encoder_->GetOutputStreamInfo(0, &si);
+
+    MFT_OUTPUT_DATA_BUFFER odb{};
+    DWORD status = 0;
+    ComPtr<IMFSample> outSample;
+    bool provides = (si.dwFlags & (MFT_OUTPUT_STREAM_PROVIDES_SAMPLES |
+                                   MFT_OUTPUT_STREAM_CAN_PROVIDE_SAMPLES)) != 0;
+    if (!provides) {
+        MFCreateSample(&outSample);
+        ComPtr<IMFMediaBuffer> b;
+        MFCreateMemoryBuffer(si.cbSize ? si.cbSize : (1 << 20), &b);
+        outSample->AddBuffer(b.Get());
+        odb.pSample = outSample.Get();
+    }
+    HRESULT hr = encoder_->ProcessOutput(0, 1, &odb, &status);
+    if (hr == MF_E_TRANSFORM_NEED_MORE_INPUT) return 0;
+    if (FAILED(hr)) { lastError_ = "enc ProcessOutput"; return -1; }
+
+    ComPtr<IMFSample> got = odb.pSample;
+    if (provides && odb.pSample) odb.pSample->Release();
+
+    UINT32 clean = 0;
+    got->GetUINT32(MFSampleExtension_CleanPoint, &clean);
+    bool keyframe = clean != 0;
+
+    ComPtr<IMFMediaBuffer> buf;
+    got->ConvertToContiguousBuffer(&buf);
+    BYTE* data = nullptr; DWORD maxLen = 0, curLen = 0;
+    buf->Lock(&data, &maxLen, &curLen);
+    LONGLONG st = 0; got->GetSampleTime(&st);
+    if (cb_ && curLen > 0)
+        cb_(frameId, (uint64_t)(st / 10), keyframe, data, (int)curLen);
+    buf->Unlock();
+    return 1;
 }
 
 void MediaFoundationH264Encoder::ApplyBitrate() {

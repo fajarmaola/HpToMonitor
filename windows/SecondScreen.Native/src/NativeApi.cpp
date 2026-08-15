@@ -24,6 +24,8 @@ namespace {
     SslEncodedFrameCallback g_cb = nullptr;
     void* g_user = nullptr;
     std::atomic<int> g_fps{60};
+    std::atomic<int> g_inputs{0};   // frames fed into the encoder
+    std::atomic<int> g_outputs{0};  // encoded H.264 access units emitted (callback fired)
     std::mutex g_errMutex;
     std::string g_lastError;        // shared across threads — guarded by g_errMutex (was thread_local: bug)
 
@@ -107,6 +109,7 @@ namespace {
             g_status = -2; g_running = false; g_capture.Shutdown(); CoUninitialize(); return;
         }
         g_encoder.SetCallback([](uint32_t id, uint64_t ts, bool key, const uint8_t* d, int n) {
+            g_outputs.fetch_add(1);
             if (g_cb) g_cb(id, ts, key ? 1 : 0, d, n, g_user);
         });
         g_status = 1; // capture + encoder initialized; frames should now flow
@@ -124,7 +127,8 @@ namespace {
             int r = g_capture.AcquireFrame(tex, 8);
             if (r == 1 && tex) {
                 // Fast path: real screen change captured via Desktop Duplication (motion/video).
-                g_encoder.EncodeFrame(tex.Get(), NowUs());
+                if (g_encoder.EncodeFrame(tex.Get(), NowUs())) g_inputs.fetch_add(1);
+                else SetLastError("encoder(dxgi): " + g_encoder.LastError());
                 g_capture.ReleaseFrame();
                 lastEncode = std::chrono::steady_clock::now();
             } else if (r < 0) {
@@ -145,10 +149,23 @@ namespace {
                     Microsoft::WRL::ComPtr<ID3D11Texture2D> gtex;
                     if (GdiGrab(g_capture.Device(), left, top, gw, gh, gtex) && gtex) {
                         g_encoder.RequestKeyframe();
-                        g_encoder.EncodeFrame(gtex.Get(), NowUs());
+                        if (g_encoder.EncodeFrame(gtex.Get(), NowUs())) g_inputs.fetch_add(1);
+                        else SetLastError("encoder(gdi): " + g_encoder.LastError());
                         lastEncode = std::chrono::steady_clock::now();
+                    } else {
+                        SetLastError("GDI capture failed (BitBlt/GetDIBits/CreateTexture2D) for rect " +
+                                     std::to_string(gw) + "x" + std::to_string(gh) +
+                                     " @(" + std::to_string(left) + "," + std::to_string(top) + ")");
                     }
                 }
+            }
+
+            // Pinpoint diagnostic: if we fed frames but the encoder emitted no H.264 output, the
+            // problem is the encoder/MFT (not capture) — surface that so it isn't a silent black.
+            if (g_outputs.load() == 0 && g_inputs.load() >= 3) {
+                SetLastError("Encoder menerima " + std::to_string(g_inputs.load()) +
+                             " frame tetapi output H.264 = 0 (MFT tidak mengeluarkan frame). " +
+                             g_encoder.LastError());
             }
 
             // Pace to target FPS (encoder itself also rate-limits via duration).
@@ -173,7 +190,7 @@ SSL_API int SSL_CALL SslNativeStart(int outputIndex, int fps, int bitrateKbps,
                                     int useHardware, SslEncodedFrameCallback cb, void* user) {
     if (g_running) return -100; // already running
     g_cb = cb; g_user = user; g_fps = fps > 0 ? fps : 60;
-    g_status = 0; SetLastError("");
+    g_status = 0; g_inputs = 0; g_outputs = 0; SetLastError("");
     EncoderConfig cfg;
     cfg.fps = g_fps.load();
     cfg.bitrateKbps = bitrateKbps > 0 ? bitrateKbps : 8000;

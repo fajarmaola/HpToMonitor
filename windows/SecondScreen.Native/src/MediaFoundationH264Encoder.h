@@ -29,12 +29,16 @@ private:
     bool CreateColorConverter();
     bool CreateEncoder(bool hardware);
     bool ConvertToNv12(ID3D11Texture2D* bgra, ComPtr<IMFSample>& nv12Sample, uint64_t tsUs);
-    bool DrainEncoder(uint32_t frameId);
+    bool DrainEncoder(uint32_t frameId);          // synchronous MFT: pull all ready output
+    int  PullOutput(uint32_t frameId);            // deliver one encoded sample: 1=got, 0=need input, -1=err
+    bool EncodeAsync(IMFSample* nv12, uint32_t frameId); // async (hardware) MFT event model
     void ApplyBitrate();
 
     ComPtr<ID3D11Device> device_;
     ComPtr<IMFTransform> converter_;   // CLSID_VideoProcessorMFT: BGRA -> NV12
     ComPtr<IMFTransform> encoder_;     // H.264 encoder MFT
+    ComPtr<IMFMediaEventGenerator> encoderEvents_; // set when the encoder MFT is asynchronous
+    bool async_ = false;               // true when encoder_ is an async (typically hardware) MFT
     ComPtr<IMFDXGIDeviceManager> dxgiManager_;
     UINT resetToken_ = 0;
 
