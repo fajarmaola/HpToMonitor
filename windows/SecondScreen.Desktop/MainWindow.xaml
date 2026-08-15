@@ -124,9 +124,13 @@
                 <Button x:Name="UpdateButton" Style="{StaticResource Pill}" Content="Cek Pembaruan"
                         Click="UpdateButton_Click" Width="140" Margin="0,0,0,10"/>
             </WrapPanel>
-            <TextBlock x:Name="FooterText" Text="PT Teleraya Digital Group  •  company.teleraya.com"
-                       Foreground="{StaticResource FgMuted}" FontSize="11" Opacity="0.7"
-                       HorizontalAlignment="Center" Margin="0,8,0,0"/>
+            <TextBlock HorizontalAlignment="Center" Margin="0,8,0,0"
+                       Foreground="{StaticResource FgMuted}" FontSize="11" Opacity="0.85">
+                <Run Text="PT Teleraya Digital Group  •  "/><Hyperlink NavigateUri="https://company.teleraya.com"
+                          RequestNavigate="Hyperlink_RequestNavigate"
+                          Foreground="{StaticResource Accent}"
+                          TextDecorations="Underline">company.teleraya.com</Hyperlink><Run x:Name="VersionRun" Text=""/>
+            </TextBlock>
         </StackPanel>
     </Grid>
     </ScrollViewer>

@@ -18,10 +18,21 @@ public partial class MainWindow : Window
         ApplyLanguage();
 
         // Show the build version prominently so it's obvious whether a fresh build is installed
-        // (if this number does not change after "Save to GitHub" + reinstall, the new build did
-        // not reach this PC — an install/deploy issue, not a code issue).
+        // (if this number does not change after an update, the new build did not reach this PC).
         var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-        FooterText.Text = $"PT Teleraya Digital Group  •  Versi {v?.ToString() ?? "?"}";
+        VersionRun.Text = $"   •   Versi {v?.ToString() ?? "?"}";
+    }
+
+    // Open the company website in the default browser when the footer link is clicked.
+    private void Hyperlink_RequestNavigate(object sender, System.Windows.Navigation.RequestNavigateEventArgs e)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(e.Uri.AbsoluteUri)
+            { UseShellExecute = true });
+        }
+        catch { /* no default browser — ignore */ }
+        e.Handled = true;
     }
 
     // ---- Localization ---------------------------------------------------------------------

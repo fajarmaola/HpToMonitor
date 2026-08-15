@@ -114,8 +114,17 @@ public static class Updater
         catch { return null; }
     }
 
+    // Runs the downloaded installer SILENTLY (no wizard clicks) so an update feels like an in-app
+    // update, not a manual reinstall. Inno Setup closes the running app (Restart Manager) + our own
+    // Application.Shutdown frees the files, then the installer relaunches the app in silent mode.
+    // A single UAC prompt is unavoidable because the install writes to Program Files + installs the
+    // display driver (pnputil) — both require elevation.
     public static void RunInstaller(string path) =>
-        Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+        Process.Start(new ProcessStartInfo(path)
+        {
+            UseShellExecute = true,
+            Arguments = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS"
+        });
 
     // Returns >0 when a > b, <0 when a < b, 0 when equal (numeric, dotted).
     private static int Compare(string a, string b)

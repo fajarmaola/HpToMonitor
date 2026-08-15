@@ -31,6 +31,11 @@ SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64
 PrivilegesRequired=admin
 WizardStyle=modern
+; Let Restart Manager close the running app during a silent in-app update so its files can be
+; replaced without a manual reinstall. The app is relaunched by the silent [Run] entry below
+; (RestartApplications=no avoids a double launch).
+CloseApplications=yes
+RestartApplications=no
 
 [Files]
 Source: "{#AppDir}\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
@@ -50,6 +55,8 @@ Name: "desktopicon"; Description: "Buat pintasan di Desktop"; GroupDescription: 
 Filename: "pnputil.exe"; Parameters: "/add-driver ""{app}\driver\SecondScreenDisplay.inf"" /install"; \
   Flags: runhidden; StatusMsg: "Memasang driver Layar 2..."; Check: FileExists(ExpandConstant('{app}\driver\SecondScreenDisplay.inf'))
 Filename: "{app}\SecondScreenLocal.exe"; Description: "Jalankan HP ke Monitor"; Flags: postinstall nowait skipifsilent
+; During a silent in-app update, relaunch the app automatically (postinstall is skipped when silent).
+Filename: "{app}\SecondScreenLocal.exe"; Flags: nowait; Check: WizardSilent
 
 [UninstallRun]
 Filename: "pnputil.exe"; Parameters: "/delete-driver SecondScreenDisplay.inf /uninstall /force"; Flags: runhidden; RunOnceId: "RemoveDriver"

@@ -383,3 +383,20 @@ created (per the user's explicit engineering rule).
   normal windows show fine; motion still uses fast Duplication path.
 - VERIFY: rebuild -> connect phone -> phone shows the extended desktop wallpaper; drag a window onto
   Display 2 -> it appears on the phone. BITRATE should now show a real number (not "—").
+
+## In-app silent update + clickable company link — Jul 2025
+- User wants "Cek Pembaruan" to UPDATE in place (no manual reinstall wizard) and the company link
+  clickable.
+- Silent update:
+  * Updater.RunInstaller now launches the installer with "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+    /CLOSEAPPLICATIONS" (one unavoidable UAC prompt for Program Files + driver install).
+  * SecondScreenLocal.iss [Setup]: CloseApplications=yes, RestartApplications=no; added a silent-only
+    relaunch [Run] entry "Filename: {app}\SecondScreenLocal.exe; Flags: nowait; Check: WizardSilent"
+    so the app reopens after a silent update (postinstall entry is skipped when silent). Avoids double
+    launch by not using Restart Manager restart.
+  * MainWindow already calls Application.Shutdown() after RunInstaller so files unlock.
+  * CAVEAT: the CURRENTLY installed app still has the old (wizard) RunInstaller, so the NEXT update
+    shows the wizard once; every update AFTER this build is silent.
+- Clickable link: MainWindow.xaml footer is now a TextBlock with a <Hyperlink> to
+  https://company.teleraya.com (RequestNavigate -> Process.Start ShellExecute) + a VersionRun showing
+  "Versi {AssemblyVersion}". Replaces the old FooterText.
