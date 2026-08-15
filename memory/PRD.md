@@ -484,6 +484,12 @@ created (per the user's explicit engineering rule).
   7. Cleanup: removed dead CLSID_VideoProcessorMFT converter path; async/enc ProcessInput errors now
      include HRESULT hex.
 - Worst-case guaranteed chain: GDI capture -> CPU BGRA->NV12 -> SW H.264 -> phone shows picture.
+- CI COMPILE FIX (same session): removing wmcodecdsp.h broke ICodecAPI (C2065) — ICodecAPI is declared
+  in strmif.h (codecapi.h only has the property GUIDs). Added #include <strmif.h> before codecapi.h.
+  VERIFIED via MinGW-w64 cross syntax check (x86_64-w64-mingw32-g++-posix -fsyntax-only, installed via
+  apt in the container): MediaFoundationH264Encoder/NativeApi/DxgiCapture = 0 errors; SwDevice.cpp only
+  lacks swdevice.h under MinGW (expected, exists in real Windows SDK). Testing agent report:
+  /app/test_reports/iteration_1.json (100% pass).
 - VERIFY: Save to GitHub -> CI -> reinstall (footer version must increase) -> connect phone -> desktop
   should appear + BITRATE > 0. If a popup still appears it names stage+HRESULT (e.g. CreateVPInputView=0x..).
 - NEXT after video confirmed: phone rotation detection (user request), match exact phone resolution.

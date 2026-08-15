@@ -1,6 +1,7 @@
 #include "MediaFoundationH264Encoder.h"
 #include <mfapi.h>
 #include <mferror.h>
+#include <strmif.h>       // ICodecAPI (codecapi.h only defines the property GUIDs)
 #include <codecapi.h>
 #include <d3d11_4.h>      // ID3D11Multithread
 #include <vector>
