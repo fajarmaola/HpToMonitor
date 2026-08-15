@@ -33,7 +33,8 @@ private:
     bool DrainEncoder(uint32_t frameId);          // synchronous MFT: pull all ready output
     int  PullOutput(uint32_t frameId);            // deliver one encoded sample: 1=got, 0=need input, -1=err
     bool EncodeAsync(IMFSample* nv12, uint32_t frameId); // async (hardware) MFT event model
-    IMFSample* NextNv12Sample();       // pooled D3D11 NV12 output sample for the Video Processor
+    bool InitVideoProcessor();          // ID3D11VideoProcessor for reliable BGRA->NV12 on GPU
+    ID3D11Texture2D* NextNv12Texture(); // pooled NV12 output textures (avoids async-encoder race)
     void ApplyBitrate();
 
     ComPtr<ID3D11Device> device_;
@@ -44,6 +45,13 @@ private:
     ComPtr<IMFDXGIDeviceManager> dxgiManager_;
     UINT resetToken_ = 0;
 
+    // GPU color-space converter (BGRA capture -> NV12 encoder input) via the Direct3D 11 video API.
+    ComPtr<ID3D11VideoDevice> vdevice_;
+    ComPtr<ID3D11VideoContext> vcontext_;
+    ComPtr<ID3D11VideoProcessorEnumerator> vpEnum_;
+    ComPtr<ID3D11VideoProcessor> vproc_;
+    ComPtr<ID3D11Texture2D> inCopy_;            // BGRA copy with shader-resource bind for input view
+
     EncoderConfig cfg_;
     EncodedCallback cb_;
     std::atomic<bool> forceKeyframe_{true};
@@ -51,7 +59,8 @@ private:
     uint32_t frameCounter_ = 0;
     std::string lastError_;
     LONGLONG sampleDuration_ = 0;
-    std::vector<ComPtr<IMFSample>> nv12Pool_;  // ring of D3D NV12 output samples for the converter
+    std::vector<ComPtr<IMFSample>> nv12Pool_;  // unused (legacy MFT path)
+    std::vector<ComPtr<ID3D11Texture2D>> nv12TexPool_;  // NV12 outputs for VideoProcessorBlt
     size_t nv12Idx_ = 0;
 };
 

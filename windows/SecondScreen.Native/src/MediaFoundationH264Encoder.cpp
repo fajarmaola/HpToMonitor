@@ -33,7 +33,7 @@ bool MediaFoundationH264Encoder::Initialize(ID3D11Device* device, const EncoderC
         lastError_ = "MFCreateDXGIDeviceManager failed"; return false;
     }
 
-    if (!CreateColorConverter()) return false;
+    if (!InitVideoProcessor()) return false;   // GPU BGRA->NV12 (replaces the fragile Video MFT)
 
     bool wantHw = cfg.useHardware;
     if (!CreateEncoder(wantHw)) {
@@ -152,64 +152,28 @@ bool MediaFoundationH264Encoder::CreateEncoder(bool hardware) {
     return true;
 }
 
-bool MediaFoundationH264Encoder::ConvertToNv12(ID3D11Texture2D* bgra, ComPtr<IMFSample>& outSample,
-                                               uint64_t tsUs) {
-    // Wrap the captured texture in an IMFSample and push through the video processor.
-    ComPtr<IMFMediaBuffer> inBuf;
-    if (FAILED(MFCreateDXGISurfaceBuffer(__uuidof(ID3D11Texture2D), bgra, 0, FALSE, &inBuf)))
-        { lastError_ = "MFCreateDXGISurfaceBuffer(in)"; return false; }
-    ComPtr<IMFSample> inSample;
-    MFCreateSample(&inSample);
-    inSample->AddBuffer(inBuf.Get());
-    inSample->SetSampleTime((LONGLONG)(tsUs * 10)); // 100ns units
-    inSample->SetSampleDuration(sampleDuration_);
+bool MediaFoundationH264Encoder::InitVideoProcessor() {
+    if (vproc_) return true;
+    if (FAILED(device_.As(&vdevice_))) { lastError_ = "no ID3D11VideoDevice"; return false; }
+    ComPtr<ID3D11DeviceContext> ctx;
+    device_->GetImmediateContext(&ctx);
+    if (FAILED(ctx.As(&vcontext_))) { lastError_ = "no ID3D11VideoContext"; return false; }
 
-    if (FAILED(converter_->ProcessInput(0, inSample.Get(), 0))) { lastError_ = "conv ProcessInput"; return false; }
-
-    MFT_OUTPUT_STREAM_INFO si{};
-    converter_->GetOutputStreamInfo(0, &si);
-    bool providesSamples = (si.dwFlags & (MFT_OUTPUT_STREAM_PROVIDES_SAMPLES |
-                                          MFT_OUTPUT_STREAM_CAN_PROVIDE_SAMPLES)) != 0;
-    // A D3D11-aware Video Processor that does NOT allocate its own samples requires a D3D11 NV12
-    // TEXTURE-backed output sample; passing a system-memory buffer fails with DXGI_ERROR_INVALID_CALL
-    // (0x887A0001). Provide a pooled NV12 D3D texture (pool avoids a race with the async encoder).
-    IMFSample* outBuf = nullptr;
-    if (!providesSamples) {
-        outBuf = NextNv12Sample();
-        if (!outBuf) { lastError_ = "alloc NV12 D3D sample failed"; return false; }
-    }
-    MFT_OUTPUT_DATA_BUFFER odb{};
-    DWORD status = 0;
-    odb.pSample = outBuf;
-
-    HRESULT hr = converter_->ProcessOutput(0, 1, &odb, &status);
-    if (hr == MF_E_TRANSFORM_STREAM_CHANGE) {
-        // The processor wants its output type (re)negotiated. Re-select NV12 and retry once.
-        ComPtr<IMFMediaType> t;
-        for (DWORD i = 0; converter_->GetOutputAvailableType(0, i, &t) == S_OK; ++i) {
-            GUID sub{}; t->GetGUID(MF_MT_SUBTYPE, &sub);
-            if (sub == MFVideoFormat_NV12) { converter_->SetOutputType(0, t.Get(), 0); break; }
-            t.Reset();
-        }
-        odb = MFT_OUTPUT_DATA_BUFFER{}; status = 0;
-        odb.pSample = outBuf;
-        hr = converter_->ProcessOutput(0, 1, &odb, &status);
-    }
-    if (FAILED(hr)) {
-        char b[64]; snprintf(b, sizeof(b), "conv ProcessOutput=0x%08X", (unsigned)hr);
-        lastError_ = b; return false;
-    }
-    outSample = odb.pSample; // MFT-provided sample (providesSamples) or our pooled NV12 sample
-    if (providesSamples && odb.pSample) odb.pSample->Release() /* balanced by ComPtr assign */;
-    outSample->SetSampleTime((LONGLONG)(tsUs * 10));
-    outSample->SetSampleDuration(sampleDuration_);
+    D3D11_VIDEO_PROCESSOR_CONTENT_DESC cd{};
+    cd.InputFrameFormat = D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE;
+    cd.InputWidth = (UINT)cfg_.width;  cd.InputHeight = (UINT)cfg_.height;
+    cd.OutputWidth = (UINT)cfg_.width; cd.OutputHeight = (UINT)cfg_.height;
+    cd.Usage = D3D11_VIDEO_USAGE_PLAYBACK_NORMAL;
+    if (FAILED(vdevice_->CreateVideoProcessorEnumerator(&cd, &vpEnum_)))
+        { lastError_ = "CreateVideoProcessorEnumerator"; return false; }
+    if (FAILED(vdevice_->CreateVideoProcessor(vpEnum_.Get(), 0, &vproc_)))
+        { lastError_ = "CreateVideoProcessor"; return false; }
     return true;
 }
 
-// Returns one of a small ring of D3D11 NV12 texture-backed output samples for the Video Processor.
-// The pool prevents the (zero-copy) async encoder from reading a buffer we are about to overwrite.
-IMFSample* MediaFoundationH264Encoder::NextNv12Sample() {
-    if (nv12Pool_.empty()) {
+// Returns one of a ring of NV12 output textures (pool avoids a race with the zero-copy async encoder).
+ID3D11Texture2D* MediaFoundationH264Encoder::NextNv12Texture() {
+    if (nv12TexPool_.empty()) {
         for (int i = 0; i < 6; ++i) {
             D3D11_TEXTURE2D_DESC d{};
             d.Width = (UINT)cfg_.width; d.Height = (UINT)cfg_.height;
@@ -219,18 +183,71 @@ IMFSample* MediaFoundationH264Encoder::NextNv12Sample() {
             d.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
             ComPtr<ID3D11Texture2D> tex;
             if (FAILED(device_->CreateTexture2D(&d, nullptr, tex.GetAddressOf()))) return nullptr;
-            ComPtr<IMFMediaBuffer> buf;
-            if (FAILED(MFCreateDXGISurfaceBuffer(__uuidof(ID3D11Texture2D), tex.Get(), 0, FALSE, &buf)))
-                return nullptr;
-            ComPtr<IMFSample> s;
-            MFCreateSample(&s);
-            s->AddBuffer(buf.Get());
-            nv12Pool_.push_back(s);
+            nv12TexPool_.push_back(tex);
         }
     }
-    IMFSample* s = nv12Pool_[nv12Idx_ % nv12Pool_.size()].Get();
+    ID3D11Texture2D* t = nv12TexPool_[nv12Idx_ % nv12TexPool_.size()].Get();
     ++nv12Idx_;
-    return s;
+    return t;
+}
+
+// BGRA capture texture -> NV12 using the Direct3D 11 video processor (ID3D11VideoProcessor). This is
+// far more predictable than CLSID_VideoProcessorMFT (which returned DXGI_ERROR_INVALID_CALL here).
+bool MediaFoundationH264Encoder::ConvertToNv12(ID3D11Texture2D* bgra, ComPtr<IMFSample>& outSample,
+                                               uint64_t tsUs) {
+    if (!InitVideoProcessor()) return false;
+
+    ComPtr<ID3D11DeviceContext> ctx;
+    device_->GetImmediateContext(&ctx);
+
+    // Copy the captured BGRA into a texture with SHADER_RESOURCE bind so we can make an input view
+    // (Desktop Duplication / GDI textures may lack the flags the video processor needs).
+    if (!inCopy_) {
+        D3D11_TEXTURE2D_DESC d{}; bgra->GetDesc(&d);
+        d.Usage = D3D11_USAGE_DEFAULT; d.CPUAccessFlags = 0; d.MiscFlags = 0;
+        d.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        if (FAILED(device_->CreateTexture2D(&d, nullptr, inCopy_.GetAddressOf())))
+            { lastError_ = "create input-copy texture"; return false; }
+    }
+    ctx->CopyResource(inCopy_.Get(), bgra);
+
+    ID3D11Texture2D* nv12 = NextNv12Texture();
+    if (!nv12) { lastError_ = "create NV12 texture"; return false; }
+
+    D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC ivd{};
+    ivd.ViewDimension = D3D11_VPIV_DIMENSION_TEXTURE2D;
+    ivd.Texture2D.MipSlice = 0; ivd.Texture2D.ArraySlice = 0;
+    ComPtr<ID3D11VideoProcessorInputView> iview;
+    if (FAILED(vdevice_->CreateVideoProcessorInputView(inCopy_.Get(), vpEnum_.Get(), &ivd, &iview)))
+        { lastError_ = "CreateVideoProcessorInputView"; return false; }
+
+    D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC ovd{};
+    ovd.ViewDimension = D3D11_VPOV_DIMENSION_TEXTURE2D;
+    ovd.Texture2D.MipSlice = 0;
+    ComPtr<ID3D11VideoProcessorOutputView> oview;
+    if (FAILED(vdevice_->CreateVideoProcessorOutputView(nv12, vpEnum_.Get(), &ovd, &oview)))
+        { lastError_ = "CreateVideoProcessorOutputView"; return false; }
+
+    D3D11_VIDEO_PROCESSOR_STREAM stream{};
+    stream.Enable = TRUE;
+    stream.pInputSurface = iview.Get();
+    HRESULT hr = vcontext_->VideoProcessorBlt(vproc_.Get(), oview.Get(), 0, 1, &stream);
+    if (FAILED(hr)) {
+        char b[48]; snprintf(b, sizeof(b), "VideoProcessorBlt=0x%08X", (unsigned)hr);
+        lastError_ = b; return false;
+    }
+
+    // Wrap the NV12 texture as an IMFSample for the encoder.
+    ComPtr<IMFMediaBuffer> buf;
+    if (FAILED(MFCreateDXGISurfaceBuffer(__uuidof(ID3D11Texture2D), nv12, 0, FALSE, &buf)))
+        { lastError_ = "MFCreateDXGISurfaceBuffer(nv12)"; return false; }
+    ComPtr<IMFSample> s;
+    MFCreateSample(&s);
+    s->AddBuffer(buf.Get());
+    s->SetSampleTime((LONGLONG)(tsUs * 10)); // 100ns units
+    s->SetSampleDuration(sampleDuration_);
+    outSample = s;
+    return true;
 }
 
 bool MediaFoundationH264Encoder::EncodeFrame(ID3D11Texture2D* frame, uint64_t tsUs) {
@@ -357,7 +374,13 @@ void MediaFoundationH264Encoder::Shutdown() {
     encoder_.Reset();
     converter_.Reset();
     encoderEvents_.Reset();
+    vproc_.Reset();
+    vpEnum_.Reset();
+    vcontext_.Reset();
+    vdevice_.Reset();
+    inCopy_.Reset();
     nv12Pool_.clear();
+    nv12TexPool_.clear();
     nv12Idx_ = 0;
     async_ = false;
     dxgiManager_.Reset();

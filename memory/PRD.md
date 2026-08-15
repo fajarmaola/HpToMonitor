@@ -448,3 +448,18 @@ created (per the user's explicit engineering rule).
   Shutdown. STREAM_CHANGE retry + HRESULT reporting retained.
 - VERIFY: rebuild -> phone should show the desktop; BITRATE shows a number. If it still fails the popup
   gives the next HRESULT to chase.
+
+## Replace VideoProcessorMFT with ID3D11VideoProcessor — Jul 2025
+- conv ProcessOutput kept returning 0x887A0001 (DXGI_ERROR_INVALID_CALL) despite BEGIN_STREAMING +
+  D3D NV12 output sample fixes. The CLSID_VideoProcessorMFT sample-allocation contract is too fragile
+  on this GPU.
+- FIX: dropped the MFT color converter; ConvertToNv12 now uses the Direct3D 11 video API directly
+  (ID3D11VideoDevice/Context/Processor). Per frame: CopyResource the captured BGRA into a
+  SHADER_RESOURCE input texture -> CreateVideoProcessorInputView -> VideoProcessorBlt into a pooled
+  NV12 output texture (RENDER_TARGET|SHADER_RESOURCE, 6-deep pool for the async encoder) -> wrap NV12
+  as IMFSample for the encoder. InitVideoProcessor() lazily builds the enumerator+processor.
+  Errors report exact stage/HRESULT (CreateVideoProcessorInputView / OutputView / VideoProcessorBlt=0x..).
+  CreateColorConverter() left defined but unused. Shutdown resets all VP objects + pools.
+- This is the OBS/Sunshine-style path and avoids the MFT INVALID_CALL entirely.
+- VERIFY: rebuild -> phone should show the desktop; BITRATE shows a number. Any remaining failure now
+  names the exact D3D video step + HRESULT.
