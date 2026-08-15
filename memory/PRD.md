@@ -230,3 +230,18 @@ created (per the user's explicit engineering rule).
     vs "LAN • Mirror" so the user can confirm a real Display 2.
 - VERIFY on user PC: Save to GitHub -> reinstall -> launch (accept UAC) -> connect phone ->
   ConnText should read "Layar Virtual" and Windows Display Settings should show Display 2.
+
+## Code 31 fix: driver built with WDK newer than target OS — Jun 2026
+- Symptom AFTER the elevation fix: device NOW enumerates in Device Manager (SwDeviceCreate ok),
+  but shows "Code 31 — Windows cannot load the drivers... {Operation Failed} (STATUS_UNSUCCESSFUL)".
+  Code 31 = driver DLL fails to LOAD into WUDFHost (not a runtime init error).
+- ROOT CAUSE: driver was built with WDK 10.0.28000.2526 (Windows 11 25H2 / Insider kit) but the
+  user runs Windows 11 24H2 (Build 26100). MS docs: building an IddCx/UMDF driver with a WDK newer
+  than the target OS makes it install but fail to load with Code 31. Rule: build against the OLDEST
+  OS you want to support.
+- FIX: pinned WDK + SDK.CPP NuGet to stable 24H2 kit 10.0.26100.4204 in
+  windows/SecondScreen.DisplayDriver/packages.config + Directory.Build.props (import paths updated).
+  INF stays UmdfLibraryVersion 2.25.0 / IddCx0104 (both well below 24H2 so safe). CI reads
+  packages.config (no hardcoded WDK version in workflows).
+- VERIFY on user PC: Save to GitHub -> new CI build (26100 WDK) -> reinstall -> run as admin ->
+  connect phone -> device should load without Code 31 and ConnText should show "Layar Virtual".
