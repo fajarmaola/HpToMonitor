@@ -1,0 +1,31 @@
+{
+  "summary": "Verified black-phone-screen fixes: (1) MinGW cross syntax-checks of NativeApi.cpp, DxgiCapture.cpp, MediaFoundationH264Encoder.cpp — all exit=0. (2) Ported C# ExtractSpsPps() line-by-line to Python and ran 11 test vectors (a-e as specified plus 6 adversarial bounds tests) — 11/11 pass, NO IndexError on empty/tiny/tail-startcode buffers. (3) Static review of SessionManager (Orientation route + StartStreamer + HandleOrientation), DisplayRotation.cs (DEVMODE/DISPLAY_DEVICE layout + constants), C#/Kotlin protocol symmetry, and Android manifest configChanges. All good — no blocking issues found.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/test_reports/test_extract_sps_pps.py"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ExtractSpsPps: NAL type mask 0x1F applied correctly; loop bounds (`i + 3 < d.Length`) plus explicit `if (i + sc >= d.Length) break` prevent IndexOutOfRange on any adversarial input (verified with 200 random buffers 0-64 bytes long, empty buffer, 1/2/3/4-byte buffers, and start-codes at the very tail). C# code matches the tested-good Python port line-for-line.",
+    "OnEncodedFrame prepend path is correct: cache updates whenever headers are present in the current frame; on a bare keyframe (no SPS/PPS in-band) the cached Annex-B SPS+PPS is prepended in front so a late-joining Android decoder sees SPS,PPS,IDR in order — this directly addresses the reported black-screen root cause.",
+    "DisplayRotation.cs DEVMODE layout matches Win32 display-DEVMODE: dmDeviceName[32] + 4x ushort (dmSpecVersion/dmDriverVersion/dmSize/dmDriverExtra) + dmFields uint + dmPositionX/Y int + dmDisplayOrientation/dmDisplayFixedOutput uint + 5x short + dmFormName[32] + dmLogPixels ushort + 5x uint (dmBitsPerPel..dmDisplayFrequency) + 8x uint (dmICMMethod..dmPanningHeight). Constants DM_PELSWIDTH=0x80000, DM_PELSHEIGHT=0x100000, DM_DISPLAYORIENTATION=0x80, DMDO_90=1/180=2/270=3 all correct.",
+    "SessionManager.Route has `case MessageType.Orientation: HandleOrientation(json)` at line 112; fields `_lastVideoCfg` (line 40) and `_lastRotation` (line 41) exist; StartStreamer helper (line 216) caches cfg; HandleOrientation (line 238) properly guards `!Diagnostics.UsingVirtualDisplay` (mirror mode is skipped), stops streamer, calls `DisplayRotation.SetRotation`, awaits 800ms, recomputes OutputIndex via `NativeSafeOutputCount()-1`, restarts streamer, and requests a keyframe.",
+    "Protocol symmetry OK: C# `MessageType.Orientation = \"ORIENTATION\"` (Protocol.cs:64), Kotlin `MessageType.ORIENTATION = \"ORIENTATION\"` (Protocol.kt:59), Android `ConnectionManager.sendOrientation` sends `{type:\"ORIENTATION\", rotation:<int>}` (lines 196-204), C# `OrientationMessage` has `[JsonPropertyName(\"rotation\")]` (Messages.cs:114).",
+    "AndroidManifest MonitorActivity has `android:configChanges=\"orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize\"` — onConfigurationChanged is guaranteed to fire on rotation without recreating the Activity, so the stream keeps running and sendOrientation() fires immediately.",
+    "H264Decoder keyframe input-buffer retry loop is correct (up to ~100ms) — protects against MediaCodec being briefly full when the SPS/PPS-carrying IDR arrives; `var inIndex` allowed to be reassigned in the retry loop.",
+    "VideoReceiver.packetsReceived++ correctly counts only well-formed packets (past magic/length checks); framesReassembled++ increments only on complete reassembly; both wired to overlay via VideoPipeline properties.",
+    "NativeApi WorkerLoop: `gdiOnly = g_capture.Rotated()` and `gdiIntervalMs = 33ms (~30fps)` correctly switch to GDI-only path when the desktop is rotated (DXGI Desktop Duplication returns unrotated frames for rotated outputs); `lastKeyframe` 1s cadence prevents keyframe spam.",
+    "Minor observation (not a bug): `_lastRotation = rot` in HandleOrientation is set BEFORE checking SetRotation success — if SetRotation fails the cached rotation drifts from reality. Low priority since the Android side will resend on next config change.",
+    "Minor observation (not a bug): `while (i + 3 < d.Length)` misses detection of a bare 3-byte startcode located at the exact last 3 bytes of the buffer, but that startcode would have no NAL body to extract anyway — safe no-op.",
+    "SwDevice.cpp still fails MinGW syntax check (missing swdevice.h) — expected/documented in iteration_1; not a regression."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "N/A"},
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Regression harness: `python3 /app/test_reports/test_extract_sps_pps.py` (11 vectors, must all pass). MinGW cross syntax check: `cd /app/windows/SecondScreen.Native && x86_64-w64-mingw32-g++-posix -fsyntax-only -std=c++17 -DUNICODE -D_UNICODE -DNOMINMAX -DWIN32_LEAN_AND_MEAN -I include -I ../../shared/protocol/cpp src/{NativeApi,DxgiCapture,MediaFoundationH264Encoder}.cpp` (all must exit=0; SwDevice.cpp fails on missing swdevice.h — expected). Final compile authority remains the user's GitHub Actions MSVC build.",
+  "verification_evidence": {
+    "MinGW syntax": {"NativeApi.cpp": "exit=0", "DxgiCapture.cpp": "exit=0", "MediaFoundationH264Encoder.cpp": "exit=0"},
+    "ExtractSpsPps Python port": "11/11 test vectors PASS (a full frame, b IDR-only, c mixed 3/4-byte startcodes, d SPS-without-PPS, e prepend path, + 6 adversarial bounds tests including empty/tiny/tail-startcode/random-fuzz)"
+  }
+}

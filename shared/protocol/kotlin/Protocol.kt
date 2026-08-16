@@ -56,6 +56,7 @@ object MessageType {
     const val STATS = "STATS"
     const val DEVICE_UPDATE = "DEVICE_UPDATE"
     const val SET_QUALITY = "SET_QUALITY"
+    const val ORIENTATION = "ORIENTATION"
     const val DISCONNECT = "DISCONNECT"
 }
 

@@ -192,6 +192,17 @@ class ConnectionManager(private val appContext: Context) {
         scope.launch { try { control.send(JSONObject().put("type", MessageType.REQUEST_KEYFRAME)) } catch (_: Exception) {} }
     }
 
+    // Tell Windows the phone's physical rotation (0/90/180/270) so Display 2 rotates to match.
+    fun sendOrientation(rotationDeg: Int) {
+        scope.launch {
+            try {
+                control.send(JSONObject()
+                    .put("type", MessageType.ORIENTATION)
+                    .put("rotation", rotationDeg))
+            } catch (_: Exception) {}
+        }
+    }
+
     fun sendStats(decodeFps: Double, renderFps: Double, dropped: Long, jitterMs: Double) {
         scope.launch {
             try {

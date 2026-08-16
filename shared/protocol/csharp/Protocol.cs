@@ -61,6 +61,7 @@ namespace SecondScreen.Core
         public const string Stats            = "STATS";
         public const string DeviceUpdate     = "DEVICE_UPDATE";
         public const string SetQuality       = "SET_QUALITY";
+        public const string Orientation      = "ORIENTATION";
         public const string Disconnect       = "DISCONNECT";
     }
 

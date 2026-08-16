@@ -37,6 +37,8 @@ public sealed class SessionManager : IDisposable
     private int _missedPongs;
     private double _rttMs;
     private uint _frameId;
+    private VideoStreamConfig? _lastVideoCfg;
+    private int _lastRotation;
 
     public SessionState State { get; private set; } = SessionState.Idle;
     public DeviceInfo PeerDevice => _peerDevice;
@@ -107,6 +109,7 @@ public sealed class SessionManager : IDisposable
             case MessageType.Pong: HandlePong(json); break;
             case MessageType.Touch: HandleTouch(json); break;
             case MessageType.RequestKeyframe: _streamer?.RequestKeyframe(); _adaptive?.NoteKeyframeRequest(); break;
+            case MessageType.Orientation: HandleOrientation(json); break;
             case MessageType.Stats: HandleStats(json); break;
             case MessageType.DeviceUpdate: HandleDeviceUpdate(json); break;
             case MessageType.Disconnect: Disconnect("peer requested"); break;
@@ -201,6 +204,18 @@ public sealed class SessionManager : IDisposable
         Diagnostics.Codec = "H.264"; Diagnostics.RaiseUpdated();
 
         // Start the encoder; frames flow to the peer once we know its video port (config ack).
+        _lastRotation = 0;
+        StartStreamer(new VideoStreamConfig
+        {
+            OutputIndex = outputIndex, Width = w, Height = h, Fps = fps,
+            BitrateKbps = bitrate, UseHardware = _opts.UseHardwareEncoder,
+            EncryptionKey = _opts.EncryptVideo ? _sessionKey : null
+        });
+    }
+
+    private void StartStreamer(VideoStreamConfig cfg)
+    {
+        _lastVideoCfg = cfg;
         _streamer = new VideoStreamer(_transport!);
         _streamer.FatalError += msg =>
         {
@@ -210,17 +225,47 @@ public sealed class SessionManager : IDisposable
         };
         try
         {
-            _streamer.Start(new VideoStreamConfig
-            {
-                OutputIndex = outputIndex, Width = w, Height = h, Fps = fps,
-                BitrateKbps = bitrate, UseHardware = _opts.UseHardwareEncoder,
-                EncryptionKey = _opts.EncryptVideo ? _sessionKey : null
-            });
+            _streamer.Start(cfg);
         }
         catch (Exception ex)
         {
             RaiseError($"Encoder unavailable: {ex.Message}");
         }
+    }
+
+    // Phone rotated: rotate the virtual display to match, then restart the capture pipeline
+    // (the desktop dimensions changed underneath it).
+    private async void HandleOrientation(string json)
+    {
+        var o = ControlMessaging.Parse<OrientationMessage>(json);
+        if (o == null) return;
+        int rot = ((o.Rotation % 360) + 360) % 360;
+        if (rot == _lastRotation) return;
+        _lastRotation = rot;
+        if (!Diagnostics.UsingVirtualDisplay)
+        {
+            Log.Info($"rotation {rot}° ignored (mirroring the primary display)");
+            return;
+        }
+        Log.Info($"Phone rotated -> {rot}°: rotating Display 2 + restarting capture");
+        try
+        {
+            _streamer?.Stop();
+            bool ok = await Task.Run(() => DisplayRotation.SetRotation(rot));
+            if (!ok) Log.Warn("rotation: SetRotation failed");
+            await Task.Delay(800); // let Windows settle the mode change
+            var cfg = _lastVideoCfg;
+            if (cfg == null || State is not (SessionState.Streaming or SessionState.Reconnecting)) return;
+            cfg.OutputIndex = Math.Max(0, NativeSafeOutputCount() - 1);
+            bool swap = rot is 90 or 270;
+            int w0 = _peerDevice.Width, h0 = _peerDevice.Height;
+            Diagnostics.Width = swap ? Math.Max(w0, h0) : w0;
+            Diagnostics.Height = swap ? Math.Min(w0, h0) : h0;
+            Diagnostics.RaiseUpdated();
+            StartStreamer(cfg);
+            _streamer?.RequestKeyframe();
+        }
+        catch (Exception ex) { RaiseError($"Gagal menerapkan rotasi: {ex.Message}"); }
     }
 
     private static int NativeSafeOutputCount()

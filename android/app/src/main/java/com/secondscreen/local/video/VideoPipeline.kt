@@ -17,6 +17,9 @@ class VideoPipeline(
 
     val decodeFps: Double get() = decoder?.decodeFps ?: 0.0
     val droppedFrames: Long get() = receiver?.packetsLost ?: 0L
+    val packetsReceived: Long get() = receiver?.packetsReceived ?: 0L
+    val framesReassembled: Long get() = receiver?.framesReassembled ?: 0L
+    val decodedFrames: Long get() = decoder?.decodedFrames ?: 0L
 
     fun start(surface: Surface) {
         val dec = H264Decoder(surface, config.width, config.height).apply { start() }
@@ -37,6 +40,9 @@ class VideoPipeline(
     private fun startStatsReporter() {
         scope.launch {
             while (isActive) {
+                // Until the first frame decodes, keep asking for a keyframe — the initial one may
+                // have been sent before our UDP socket was listening.
+                if (decodedFrames == 0L) connection.requestKeyframe()
                 connection.sendStats(decodeFps, decodeFps, droppedFrames, 0.0)
                 delay(1000)
             }

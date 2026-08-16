@@ -40,7 +40,12 @@ class H264Decoder(
     fun submit(unit: DecodedUnit) {
         val c = codec ?: return
         try {
-            val inIndex = c.dequeueInputBuffer(10_000)
+            var inIndex = c.dequeueInputBuffer(10_000)
+            if (inIndex < 0 && unit.keyframe) {
+                // Never drop a keyframe (it may carry SPS/PPS) — retry up to ~100ms.
+                var tries = 0
+                while (inIndex < 0 && tries++ < 10) inIndex = c.dequeueInputBuffer(10_000)
+            }
             if (inIndex >= 0) {
                 val buf: ByteBuffer? = c.getInputBuffer(inIndex)
                 buf?.clear()

@@ -106,3 +106,10 @@ public sealed class DisconnectMessage
     [JsonPropertyName("type")] public string Type { get; set; } = MessageType.Disconnect;
     [JsonPropertyName("reason")] public string Reason { get; set; } = "";
 }
+
+// Phone physical rotation in degrees (0/90/180/270); host rotates the virtual display to match.
+public sealed class OrientationMessage
+{
+    [JsonPropertyName("type")] public string Type { get; set; } = MessageType.Orientation;
+    [JsonPropertyName("rotation")] public int Rotation { get; set; }
+}

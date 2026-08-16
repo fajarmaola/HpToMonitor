@@ -32,6 +32,8 @@ class VideoReceiver(
     private var chunks = arrayOfNulls<ByteArray>(0)
 
     @Volatile var packetsLost = 0L
+    @Volatile var packetsReceived = 0L
+    @Volatile var framesReassembled = 0L
 
     fun start() {
         val s = DatagramSocket(null).apply {
@@ -66,6 +68,7 @@ class VideoReceiver(
         val tsUs = bb.long
         val payloadLen = bb.short.toInt() and 0xFFFF
         if (payloadLen <= 0 || bb.remaining() < payloadLen) return
+        packetsReceived++
 
         var payload = ByteArray(payloadLen)
         bb.get(payload)
@@ -100,6 +103,7 @@ class VideoReceiver(
             val frame = ByteArray(total)
             var off = 0
             for (c in chunks) { if (c != null) { System.arraycopy(c, 0, frame, off, c.size); off += c.size } }
+            framesReassembled++
             onFrame(DecodedUnit(frame, curTsUs, curKeyframe))
             curFrameId = -1L
         }

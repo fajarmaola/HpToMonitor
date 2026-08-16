@@ -111,6 +111,10 @@ bool DxgiCapture::Initialize(int outputIndex) {
             return false;
         }
     }
+    DXGI_OUTDUPL_DESC dupDesc{};
+    duplication_->GetDesc(&dupDesc);
+    rotated_ = dupDesc.Rotation != DXGI_MODE_ROTATION_IDENTITY &&
+               dupDesc.Rotation != DXGI_MODE_ROTATION_UNSPECIFIED;
     return true;
 }
 

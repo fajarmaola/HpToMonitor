@@ -99,6 +99,8 @@ public sealed class VideoStreamer : IDisposable
         });
     }
 
+    private byte[]? _spsPps; // cached Annex-B SPS+PPS, re-injected before keyframes that lack them
+
     private static void OnEncodedFrame(uint frameId, ulong tsUs, int isKeyframe, IntPtr data, int len, IntPtr user)
     {
         if (user == IntPtr.Zero || len <= 0) return;
@@ -107,13 +109,65 @@ public sealed class VideoStreamer : IDisposable
 
         var frame = new byte[len];
         Marshal.Copy(data, frame, 0, len);
-        foreach (var pkt in self._packetizer.Packetize(frameId, tsUs, isKeyframe != 0, frame))
+
+        // Android MediaCodec can only start decoding from SPS/PPS. Encoders often emit them ONLY
+        // on the very first sample, but the phone joins LATE (after tapping "Mulai Tampilkan"),
+        // so cache SPS/PPS here and prepend them to every keyframe that lacks them.
+        bool keyframe = isKeyframe != 0;
+        var headers = ExtractSpsPps(frame);
+        if (headers != null) self._spsPps = headers;
+        else if (keyframe && self._spsPps != null)
+        {
+            var patched = new byte[self._spsPps.Length + frame.Length];
+            Buffer.BlockCopy(self._spsPps, 0, patched, 0, self._spsPps.Length);
+            Buffer.BlockCopy(frame, 0, patched, self._spsPps.Length, frame.Length);
+            frame = patched;
+        }
+
+        int sent = 0;
+        foreach (var pkt in self._packetizer.Packetize(frameId, tsUs, keyframe, frame))
         {
             self._transport.SendVideoPacket(pkt);
             self._bytesWindow += pkt.Length;
+            // Pace large keyframe bursts slightly so Wi-Fi doesn't drop the tail packets.
+            if (++sent % 24 == 0) Thread.Sleep(1);
         }
         self.FramesSent++;
         self.UpdateBitrate();
+    }
+
+    // Returns concatenated SPS+PPS NAL units (with start codes) when BOTH occur in the frame.
+    private static byte[]? ExtractSpsPps(byte[] d)
+    {
+        byte[]? sps = null, pps = null;
+        int start = -1, type = 0;
+        void Take(int end)
+        {
+            if (start < 0) return;
+            if (type == 7) sps = d.AsSpan(start, end - start).ToArray();
+            else if (type == 8) pps = d.AsSpan(start, end - start).ToArray();
+        }
+        int i = 0;
+        while (i + 3 < d.Length)
+        {
+            bool sc3 = d[i] == 0 && d[i + 1] == 0 && d[i + 2] == 1;
+            bool sc4 = d[i] == 0 && d[i + 1] == 0 && d[i + 2] == 0 && d[i + 3] == 1;
+            if (sc3 || sc4)
+            {
+                Take(i);
+                int sc = sc3 ? 3 : 4;
+                if (i + sc >= d.Length) { start = -1; break; }
+                start = i; type = d[i + sc] & 0x1F;
+                i += sc + 1;
+            }
+            else i++;
+        }
+        Take(d.Length);
+        if (sps == null || pps == null) return null;
+        var outBuf = new byte[sps.Length + pps.Length];
+        Buffer.BlockCopy(sps, 0, outBuf, 0, sps.Length);
+        Buffer.BlockCopy(pps, 0, outBuf, sps.Length, pps.Length);
+        return outBuf;
     }
 
     private void UpdateBitrate()

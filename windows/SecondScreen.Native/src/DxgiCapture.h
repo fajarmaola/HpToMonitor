@@ -27,6 +27,9 @@ public:
     int Height() const { return height_; }
     int Left() const { return left_; }
     int Top() const { return top_; }
+    // True when the desktop is rotated (portrait/landscape flip): duplication frames then come
+    // UNROTATED with rotation metadata, so callers should capture via GDI instead.
+    bool Rotated() const { return rotated_; }
     static int GetOutputCount();
     const std::string& LastError() const { return lastError_; }
 
@@ -41,6 +44,7 @@ private:
     int left_ = 0, top_ = 0;
     int outputIndex_ = 0;
     bool frameHeld_ = false;
+    bool rotated_ = false;
     std::string lastError_;
 };
 

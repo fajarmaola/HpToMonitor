@@ -79,6 +79,7 @@ class MonitorActivity : ComponentActivity() {
                     it.start(holder.surface)
                 }
                 TouchInputManager(surfaceView, connection).attach()
+                sendOrientation() // let Windows match our current physical orientation
             }
             override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, ht: Int) {}
             override fun surfaceDestroyed(holder: SurfaceHolder) { pipeline?.stop() }
@@ -93,6 +94,19 @@ class MonitorActivity : ComponentActivity() {
         super.onResume()
         monitorMode.enter()
         monitorMode.tryStartLockTask()
+    }
+
+    // Rotation is handled without recreating the Activity (configChanges in the manifest), so the
+    // stream keeps running; just tell Windows to rotate the virtual display to match.
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        sendOrientation()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun sendOrientation() {
+        val rot = windowManager.defaultDisplay.rotation * 90
+        Session.connection?.sendOrientation(rot)
     }
 
     private fun toggleOverlay() {
@@ -123,6 +137,7 @@ class MonitorActivity : ComponentActivity() {
                     append("Codec: ${config.codec.uppercase()}\n")
                     append("Resolusi: ${config.width}x${config.height}\n")
                     append("Frame drop: $dropped\n")
+                    append("UDP: ${pipeline?.packetsReceived ?: 0} | Utuh: ${pipeline?.framesReassembled ?: 0} | Decode: ${pipeline?.decodedFrames ?: 0}\n")
                     append("Terenkripsi: ${if (config.encryptVideo) "ya" else "tidak"}")
                 }
                 ui.postDelayed(this, 1000)

@@ -116,7 +116,12 @@ namespace {
 
         const int left = g_capture.Left(), top = g_capture.Top();
         const int gw = g_capture.Width(), gh = g_capture.Height();
+        // Rotated desktop (phone rotation): duplication frames come UNROTATED, GDI always grabs
+        // the upright desktop — so switch to GDI-only capture at ~30fps.
+        const bool gdiOnly = g_capture.Rotated();
+        const long long gdiIntervalMs = gdiOnly ? 33 : 200;
         auto lastEncode = std::chrono::steady_clock::now() - std::chrono::seconds(1);
+        auto lastKeyframe = lastEncode;
         g_encoder.RequestKeyframe(); // make the very first encoded frame an IDR
         bool triedSwFallback = false;
         int encodeFails = 0;
@@ -126,7 +131,7 @@ namespace {
             auto frameStart = std::chrono::steady_clock::now();
 
             Microsoft::WRL::ComPtr<ID3D11Texture2D> tex;
-            int r = g_capture.AcquireFrame(tex, 8);
+            int r = gdiOnly ? 0 : g_capture.AcquireFrame(tex, 8);
             if (r == 1 && tex) {
                 // Fast path: real screen change captured via Desktop Duplication (motion/video).
                 if (g_encoder.EncodeFrame(tex.Get(), NowUs())) g_inputs.fetch_add(1);
@@ -147,10 +152,16 @@ namespace {
                 // This also bootstraps frame #1 and lets UDP loss recover via periodic keyframes.
                 auto sinceMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::steady_clock::now() - lastEncode).count();
-                if (sinceMs >= 200) {
+                if (sinceMs >= gdiIntervalMs) {
                     Microsoft::WRL::ComPtr<ID3D11Texture2D> gtex;
                     if (GdiGrab(g_capture.Device(), left, top, gw, gh, gtex) && gtex) {
-                        g_encoder.RequestKeyframe();
+                        // Periodic IDR (not every frame — that would explode the bitrate at 30fps).
+                        auto sinceKeyMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now() - lastKeyframe).count();
+                        if (sinceKeyMs >= 1000) {
+                            g_encoder.RequestKeyframe();
+                            lastKeyframe = std::chrono::steady_clock::now();
+                        }
                         if (g_encoder.EncodeFrame(gtex.Get(), NowUs())) g_inputs.fetch_add(1);
                         else { ++encodeFails; SetLastError("encoder(gdi): " + g_encoder.LastError()); }
                         lastEncode = std::chrono::steady_clock::now();

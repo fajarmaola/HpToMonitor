@@ -484,6 +484,36 @@ created (per the user's explicit engineering rule).
   7. Cleanup: removed dead CLSID_VideoProcessorMFT converter path; async/enc ProcessInput errors now
      include HRESULT hex.
 - Worst-case guaranteed chain: GDI capture -> CPU BGRA->NV12 -> SW H.264 -> phone shows picture.
+
+## Black screen root cause #2 (late join) + ROTATION FEATURE — Jun 2026
+- User: no more popup (=> Windows IS sending frames) but phone still black. ROOT CAUSE HYPOTHESIS
+  (high confidence): phone joins the stream LATE (taps "Mulai Tampilkan" after streaming started);
+  H.264 SPS/PPS headers were only in the FIRST encoder sample => MediaCodec can never start.
+- FIXES:
+  1. VideoStreamer.cs: cache SPS/PPS NALs from the stream; PREPEND them to every keyframe that
+     lacks them (ExtractSpsPps — tested with 11 vectors incl. fuzz, see test_reports/iteration_2).
+  2. VideoStreamer.cs: pace UDP bursts (Thread.Sleep(1) per 24 packets) to avoid Wi-Fi tail loss.
+  3. Android VideoPipeline: re-request keyframe EVERY second while decodedFrames==0.
+  4. Android H264Decoder: retry input buffer up to 100ms for keyframes (never drop SPS/PPS+IDR).
+  5. Android overlay diagnostics: "UDP: x | Utuh: y | Decode: z" => next report pinpoints stage:
+     UDP=0 -> network; UDP>0,Utuh=0 -> reassembly/decrypt; Utuh>0,Decode=0 -> decoder; Decode>0
+     but black -> render.
+  6. NativeApi: GDI auto-keyframe throttled to 1/s (was every GDI frame).
+- ROTATION FEATURE (user request) implemented end-to-end:
+  - Android: MonitorActivity.onConfigurationChanged (manifest already configChanges+fullSensor)
+    sends ORIENTATION {rotation:0/90/180/270} (ConnectionManager.sendOrientation); also sent once
+    at pipeline start.
+  - Protocol: ORIENTATION added to shared C# + Kotlin MessageType; OrientationMessage DTO.
+  - Windows: SessionManager.HandleOrientation -> DisplayRotation.SetRotation (ChangeDisplaySettingsEx
+    + DM_DISPLAYORIENTATION, swaps PelsWidth/Height, finds virtual display by driver name with
+    non-primary fallback, dynamic flags=0 so not persisted) -> waits 800ms -> restarts streamer
+    (StartStreamer helper caches _lastVideoCfg).
+  - Native: DxgiCapture.Rotated() from DXGI_OUTDUPL_DESC; when rotated, WorkerLoop uses GDI-only
+    capture at ~30fps (duplication frames come UNROTATED for rotated desktops).
+- Verified: MinGW syntax 0 errors; testing agent iteration_2.json 100% pass; regression harness
+  python3 /app/test_reports/test_extract_sps_pps.py. MinGW install command (lost on pod restart):
+  apt-get install -y g++-mingw-w64-x86-64 (use the -posix variant binary).
+- NEXT: user tests via GitHub CI. If still black, ask for the phone overlay numbers (UDP/Utuh/Decode).
 - CI COMPILE FIX (same session): removing wmcodecdsp.h broke ICodecAPI (C2065) — ICodecAPI is declared
   in strmif.h (codecapi.h only has the property GUIDs). Added #include <strmif.h> before codecapi.h.
   VERIFIED via MinGW-w64 cross syntax check (x86_64-w64-mingw32-g++-posix -fsyntax-only, installed via
